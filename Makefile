@@ -3,7 +3,7 @@
 
 # Settings
 # Set to 0 to enable C mode
-CPP_MODE := 1
+CPP_MODE := 0
 ifeq ($(CPP_MODE), 0)
 FB_EXT := .c
 else
