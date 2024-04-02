@@ -3,7 +3,7 @@
 
 # Settings
 # Set to 0 to enable C mode
-CPP_MODE := 0
+CPP_MODE := 1
 ifeq ($(CPP_MODE), 0)
 FB_EXT := .c
 else
@@ -39,6 +39,7 @@ TARGET_EXEC := compiler
 SRC_DIR := $(TOP_DIR)/src
 BUILD_DIR ?= $(TOP_DIR)/build
 LIB_DIR ?= $(CDE_LIBRARY_PATH)/native
+INC_DIR = .
 INC_DIR ?= $(CDE_INCLUDE_PATH)
 CFLAGS += -I$(INC_DIR)
 CXXFLAGS += -I$(INC_DIR)
