@@ -1,14 +1,30 @@
-/* this is very good*/
-int main ()
+
+/*
+/*f,rfrlfrfl*/
+      int /*njsf*/ /**
+ * I refrjfjrfnrf 
+ * 
+ */
+main /*fejfefej*/ 
+// /*nenfnejfjne ednejdnedn
+(/*ENJNDEJFEF*/)
 {
-    // this is a comment 
-    /* this is 
+    //fjeifjejeje
+    /*
+    fmrfmk
+    fkefmkrf
     
     
-    a new line.*/
-    return 100
+    */
+    return//kfkrfrk
+    /*rjfrjjfrjf fjerif*/ 
+    20
+    /*nfejfnernnerf*/
     ;
-    /* this is another comment */
+/*
+frfmrk
+
+*/
 }
-/* this is bad*/
+/* this is bad */
 /*yes*/
