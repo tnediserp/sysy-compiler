@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdio>
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <inc/ast.hpp>
@@ -33,7 +34,18 @@ int main(int argc, const char *argv[]) {
   assert(!ret);
 
   // 输出解析得到的 AST, 其实就是个字符串
-  ast->Dump();
-  cout << endl;
+  // ast->Dump();
+  // cout << endl;
+  ofstream yyout;
+  yyout.open(output);
+
+
+  unique_ptr<BaseIR> ir;
+  ir = ast->AST2IR();
+  ir->Dump(yyout);
+
+  yyout << endl;
+
+  yyout.close();
   return 0;
 }

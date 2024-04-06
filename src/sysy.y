@@ -1,6 +1,8 @@
 %code requires {
   #include <memory>
   #include <string>
+  #include <iostream>
+  #include <inc/ast.hpp>
 }
 
 %{

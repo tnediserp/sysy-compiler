@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <iostream>
+#include <inc/koopa_ir.hpp>
 using namespace std;
 
 // 所有 AST 的基类
@@ -10,6 +11,7 @@ class BaseAST
 public:
     virtual ~BaseAST() = default;
     virtual void Dump() const = 0;
+    virtual unique_ptr<BaseIR> AST2IR() const = 0;
 };
 
 // CompUnit 是 BaseAST
@@ -24,6 +26,13 @@ public:
         cout << "FuncDefAST { ";
         func_def->Dump();
         cout << " }";
+    }
+
+    unique_ptr<BaseIR> AST2IR() const override
+    {
+        auto ir = new ProgramIR(0, 1);
+        ir->func_list[0] = func_def->AST2IR();
+        return unique_ptr<ProgramIR>(ir);
     }
 };
 
@@ -43,6 +52,13 @@ public:
         block->Dump();
         cout << " }";
     }
+
+    unique_ptr<BaseIR> AST2IR() const override
+    {
+        auto ir = new FuncIR(1, ident);
+        ir->block_list[0] = block->AST2IR();
+        return unique_ptr<FuncIR>(ir);
+    }
 };
 
 class FuncTypeAST : public BaseAST
@@ -55,6 +71,11 @@ public:
         cout << "FuncTypeAST { ";
         cout << "int";
         cout << " }";
+    }
+
+    unique_ptr<BaseIR> AST2IR() const override
+    {
+        return unique_ptr<BaseIR>();
     }
 };
 
@@ -69,6 +90,13 @@ public:
         stmt->Dump();
         cout << " }";
     }
+
+    unique_ptr<BaseIR> AST2IR() const override
+    {
+        auto ir = new BlockIR(1, "entry");
+        ir->instr_list[0] = stmt->AST2IR();
+        return unique_ptr<BlockIR>(ir);
+    }
 };
 
 class StmtAST : public BaseAST
@@ -80,5 +108,11 @@ public:
     void Dump() const override
     {
         cout << "StmtAST { " << number << " }";
+    }
+
+    unique_ptr<BaseIR> AST2IR() const override
+    {
+        auto ir = new ValueIR(ValueKind::RET, number);
+        return unique_ptr<ValueIR>(ir);
     }
 };

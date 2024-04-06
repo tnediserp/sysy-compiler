@@ -3,3 +3,6 @@
 
 # bash history
 .bash_history
+
+# koopa IR
+*.koopa
