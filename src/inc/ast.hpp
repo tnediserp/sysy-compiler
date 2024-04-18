@@ -12,6 +12,7 @@ public:
     virtual ~BaseAST() = default;
     virtual void Dump() const = 0;
     virtual unique_ptr<BaseIR> AST2IR() const = 0;
+    virtual void DumpIR(ostream &os) const = 0; // 根据AST输出文本形式IR
 };
 
 // CompUnit 是 BaseAST
@@ -33,6 +34,11 @@ public:
         auto ir = new ProgramIR(0, 1);
         ir->func_list[0] = func_def->AST2IR();
         return unique_ptr<ProgramIR>(ir);
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        func_def->DumpIR(os);
     }
 };
 
@@ -59,6 +65,13 @@ public:
         ir->block_list[0] = block->AST2IR();
         return unique_ptr<FuncIR>(ir);
     }
+
+    void DumpIR(ostream &os) const override
+    {
+        os << "fun @" << ident << "(): i32 {" << endl;
+        block->DumpIR(os);
+        os << "}";
+    }
 };
 
 class FuncTypeAST : public BaseAST
@@ -77,6 +90,8 @@ public:
     {
         return unique_ptr<BaseIR>();
     }
+
+    void DumpIR(ostream &os) const override {}
 };
 
 class BlockAST : public BaseAST
@@ -97,6 +112,12 @@ public:
         ir->instr_list[0] = stmt->AST2IR();
         return unique_ptr<BlockIR>(ir);
     }
+
+    void DumpIR(ostream &os) const override
+    {
+        os << "%" << "entry" << ":" << endl;
+        stmt->DumpIR(os);
+    }
 };
 
 class StmtAST : public BaseAST
@@ -114,5 +135,10 @@ public:
     {
         auto ir = new ValueIR(ValueKind::RET, number);
         return unique_ptr<ValueIR>(ir);
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        os << "ret " << number << endl;
     }
 };

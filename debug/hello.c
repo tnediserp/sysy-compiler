@@ -23,8 +23,8 @@ main /*fejfefej*/
     /*rjfrjjfrjf fjerif*/ 
     /* eieuuierwuf  jhgerirtruuwiuet
     //ierruurug ruiu
-    This a random comment. I want to use it to corret the wrong answers in this program. However, this seems inpossible. We have the similar feeling.*/
-    0x10
+    This a random comment. I want to use it to corret the wrong answers in this program. However, this seems inpossible. .*/
+    0x23f3
 
     /*nfejfnernnerf*/
     
@@ -36,4 +36,6 @@ frfmrk
 /* this is bad */
 /*yes*/
 
-/*This is the bad case **/
+/*This is the bad case. Ther are two *'s at the end of this sentense. As a result, the original REX will perform badly on this example.**/
+
+/*In the author's opinion, the students should deo there homework on their own.As far as I'm concerned, the government should not increase the fuel tax. On the one hand, this provides little convience for the*/
