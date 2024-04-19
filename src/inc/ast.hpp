@@ -49,7 +49,7 @@ public:
     virtual void Dump() const = 0;
     // virtual unique_ptr<BaseIR> AST2IR() const = 0;
     virtual void DumpIR(ostream &os) const = 0; // 根据AST输出文本形式IR
-    virtual void DistriReg(){}
+    virtual void DistriReg(int lb){} // 分配寄存器，编号以lb为下界
 };
 
 
@@ -75,9 +75,9 @@ public:
         return unique_ptr<ProgramIR>(ir);
     }
     */
-    void DistriReg() override
+    void DistriReg(int lb) override
     {
-        func_def->DistriReg();
+        func_def->DistriReg(lb);
     }
 
     void DumpIR(ostream &os) const override
@@ -112,9 +112,9 @@ public:
     }
     */
 
-    void DistriReg() override 
+    void DistriReg(int lb) override 
     {
-        block->DistriReg();
+        block->DistriReg(lb);
     }
 
     void DumpIR(ostream &os) const override
@@ -168,9 +168,9 @@ public:
     }
     */
 
-    void DistriReg() override
+    void DistriReg(int lb) override
     {
-        stmt->DistriReg();
+        stmt->DistriReg(lb);
     }
 
     void DumpIR(ostream &os) const override
@@ -201,9 +201,9 @@ public:
     }
     */
 
-    void DistriReg() override 
+    void DistriReg(int lb) override 
     {
-        exp->DistriReg();
+        exp->DistriReg(lb);
     }  
 
     void DumpIR(ostream &os) const override
@@ -213,22 +213,22 @@ public:
     }
 };
 
-// Exp ::= UnitaryExp
+// Exp ::= AddExp
 class ExpAST : public BaseAST
 {
 public:
-    unique_ptr<BaseAST> uexp;
+    unique_ptr<BaseAST> aexp;
 
     void Dump() const override {}
     // unique_ptr<BaseIR> AST2IR() const override {return NULL;}
-    void DistriReg() override
+    void DistriReg(int lb) override
     {
-        uexp->DistriReg();
-        reg = uexp->reg;
+        aexp->DistriReg(lb);
+        reg = aexp->reg;
     }
     void DumpIR(ostream &os) const override
     {
-        uexp->DumpIR(os);
+        aexp->DumpIR(os);
     }
 };
 
@@ -240,9 +240,9 @@ public:
     
     void Dump() const override {}
     // unique_ptr<BaseIR> AST2IR() const override {return NULL;}
-    void DistriReg() override
+    void DistriReg(int lb) override
     {
-        exp->DistriReg();
+        exp->DistriReg(lb);
         reg = exp->reg;
     }
     void DumpIR(ostream &os) const override
@@ -258,11 +258,11 @@ public:
     int num;
 
     void Dump() const override {}
-    void DistriReg() override
+    void DistriReg(int lb) override
     {
         reg.value = num;
         reg.real = false;
-        reg.num = 0;
+        reg.num = lb;
     }
     void DumpIR(ostream &os) const override
     {
@@ -278,9 +278,9 @@ public:
 
     void Dump() const override {}
     // unique_ptr<BaseIR> AST2IR() const override {return NULL;}
-    void DistriReg() override
+    void DistriReg(int lb) override
     {
-        pexp->DistriReg();
+        pexp->DistriReg(lb);
         reg = pexp->reg;
     }
     void DumpIR(ostream &os) const override
@@ -297,9 +297,9 @@ public:
     unique_ptr<BaseAST> uexp;
 
     void Dump() const override {}
-    void DistriReg() override
+    void DistriReg(int lb) override
     {
-        uexp->DistriReg();
+        uexp->DistriReg(lb);
 
         if (uop != "+")
             reg = uexp->reg + 1;
@@ -315,5 +315,104 @@ public:
             os << reg << " = eq 0, " << uexp->reg << endl;
 
         else return;
+    }
+};
+
+// MulExp ::= UnaryExp
+class MExp2UExp_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> uexp;
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        uexp->DistriReg(lb);
+        reg = uexp->reg;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        uexp->DumpIR(os);
+    }
+};
+
+// MulExp ::= MulExp ("*" | "/" | "%") UnaryExp
+class MExp2MExp_UExp_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> mexp;
+    unique_ptr<BaseAST> uexp;
+    string op;
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        uexp->DistriReg(lb);
+        mexp->DistriReg(uexp->reg.num);
+        reg = mexp->reg + 1;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        uexp->DumpIR(os);
+        mexp->DumpIR(os);
+        
+        if (op == "*")
+            os << reg << " = mul " << mexp->reg << ", " << uexp->reg << endl;
+        
+        else if (op == "/")
+            os << reg << " = div " << mexp->reg << ", " << uexp->reg << endl;
+
+        else if (op == "%")
+            os << reg << " = mod " << mexp->reg << ", " << uexp->reg << endl;
+
+        else cerr << "MExp2MExp_UExp_AST: bad operator." << endl;
+    }
+};
+
+// AddExp ::= MulExp
+class AExp2MulExp_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> mexp;
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        mexp->DistriReg(lb);
+        reg = mexp->reg;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        mexp->DumpIR(os);
+    }
+};
+
+// AddExp ::= AddExp ("+" | "-") MulExp
+class AExp2AExp_MExp_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> aexp;
+    unique_ptr<BaseAST> mexp;
+    string op;
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        mexp->DistriReg(lb);
+        aexp->DistriReg(mexp->reg.num);
+        reg = aexp->reg + 1;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        mexp->DumpIR(os);
+        aexp->DumpIR(os);
+        
+        if (op == "+")
+            os << reg << " = add " << aexp->reg << ", " << mexp->reg << endl;
+        
+        else if (op == "-")
+            os << reg << " = sub " << aexp->reg << ", " << mexp->reg << endl;
+
+        else cerr << "AExp2AExp_MExp_AST: bad operator." << endl;
     }
 };

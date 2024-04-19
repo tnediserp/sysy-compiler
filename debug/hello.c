@@ -24,7 +24,8 @@ main /*fejfefej*/
     /* eieuuierwuf  jhgerirtruuwiuet
     //ierruurug ruiu
     This a random comment. I want to use it to corret the wrong answers in this program. However, this seems inpossible. .*/
-    -!(!(!(+!904)))
+    ((5+3*4)*(8*9+7))+!
+    /* this is a comment*/((8*19)%(1000+(-129)))
 
     /*nfejfnernnerf*/
     

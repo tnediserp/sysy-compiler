@@ -153,7 +153,7 @@ int main(int argc, const char *argv[]) {
     auto ret = yyparse(ast);
     assert(!ret);
 
-    ast->DistriReg();
+    ast->DistriReg(0);
 
     // 使用临时文件tmp保存文本形式IR
     ofstream tmp;
