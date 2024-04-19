@@ -24,7 +24,7 @@ main /*fejfefej*/
     /* eieuuierwuf  jhgerirtruuwiuet
     //ierruurug ruiu
     This a random comment. I want to use it to corret the wrong answers in this program. However, this seems inpossible. .*/
-    0x23f3
+    -!(!(!(+!904)))
 
     /*nfejfnernnerf*/
     
