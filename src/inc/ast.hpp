@@ -56,8 +56,6 @@ public:
     Register reg;
 
     virtual ~BaseAST() = default;
-    virtual void Dump() const = 0;
-    // virtual unique_ptr<BaseIR> AST2IR() const = 0;
     virtual void DumpIR(ostream &os) const = 0; // 根据AST输出文本形式IR
     virtual void DistriReg(int lb){} // 分配寄存器，编号以lb为下界
 };
@@ -70,21 +68,6 @@ public:
     // 用智能指针管理对象
     unique_ptr<BaseAST> func_def;
 
-    void Dump() const override
-    {
-        cout << "FuncDefAST { ";
-        func_def->Dump();
-        cout << " }";
-    }
-
-    /*
-    unique_ptr<BaseIR> AST2IR() const override
-    {
-        auto ir = new ProgramIR(0, 1);
-        ir->func_list[0] = func_def->AST2IR();
-        return unique_ptr<ProgramIR>(ir);
-    }
-    */
     void DistriReg(int lb) override
     {
         func_def->DistriReg(lb);
@@ -104,24 +87,6 @@ public:
     string ident;
     unique_ptr<BaseAST> block;
 
-    void Dump() const override
-    {
-        cout << "FuncDefAST { ";
-        func_type->Dump();
-        cout << ", " << ident << ", ";
-        block->Dump();
-        cout << " }";
-    }
-
-    /*
-    unique_ptr<BaseIR> AST2IR() const override
-    {
-        auto ir = new FuncIR(1, ident);
-        ir->block_list[0] = block->AST2IR();
-        return unique_ptr<FuncIR>(ir);
-    }
-    */
-
     void DistriReg(int lb) override 
     {
         block->DistriReg(lb);
@@ -140,20 +105,6 @@ class FuncTypeAST : public BaseAST
 public:
     string type;
 
-    void Dump() const override
-    {
-        cout << "FuncTypeAST { ";
-        cout << "int";
-        cout << " }";
-    }
-
-    /*
-    unique_ptr<BaseIR> AST2IR() const override
-    {
-        return unique_ptr<BaseIR>();
-    }
-    */
-
     void DumpIR(ostream &os) const override {}
 };
 
@@ -161,22 +112,6 @@ class BlockAST : public BaseAST
 {
 public:
     unique_ptr<BaseAST> stmt;
-
-    void Dump() const override
-    {
-        cout << "BlockAST { ";
-        stmt->Dump();
-        cout << " }";
-    }
-
-    /*
-    unique_ptr<BaseIR> AST2IR() const override
-    {
-        auto ir = new BlockIR(1, "entry");
-        ir->instr_list[0] = stmt->AST2IR();
-        return unique_ptr<BlockIR>(ir);
-    }
-    */
 
     void DistriReg(int lb) override
     {
@@ -197,20 +132,6 @@ public:
     // int number;
     unique_ptr<BaseAST> exp;
 
-    void Dump() const override
-    {
-        
-    }
-
-    /*
-    unique_ptr<BaseIR> AST2IR() const override
-    {
-    
-        auto ir = new ValueIR(ValueKind::RET, number);
-        return unique_ptr<ValueIR>(ir);
-    }
-    */
-
     void DistriReg(int lb) override 
     {
         exp->DistriReg(lb);
@@ -229,8 +150,6 @@ class ExpAST : public BaseAST
 public:
     unique_ptr<BaseAST> loexp;
 
-    void Dump() const override {}
-    // unique_ptr<BaseIR> AST2IR() const override {return NULL;}
     void DistriReg(int lb) override
     {
         loexp->DistriReg(lb);
@@ -248,8 +167,6 @@ class PExp2ExpAST : public BaseAST
 public:
     unique_ptr<BaseAST> exp;
     
-    void Dump() const override {}
-    // unique_ptr<BaseIR> AST2IR() const override {return NULL;}
     void DistriReg(int lb) override
     {
         exp->DistriReg(lb);
@@ -267,7 +184,6 @@ class PExp2NumAST: public BaseAST
 public:
     int num;
 
-    void Dump() const override {}
     void DistriReg(int lb) override
     {
         reg.value = num;
@@ -286,8 +202,6 @@ class UExp2PExpAST: public BaseAST
 public:
     unique_ptr<BaseAST> pexp;
 
-    void Dump() const override {}
-    // unique_ptr<BaseIR> AST2IR() const override {return NULL;}
     void DistriReg(int lb) override
     {
         pexp->DistriReg(lb);
@@ -306,7 +220,6 @@ public:
     string uop;
     unique_ptr<BaseAST> uexp;
 
-    void Dump() const override {}
     void DistriReg(int lb) override
     {
         uexp->DistriReg(lb);
@@ -335,7 +248,7 @@ class MExp2UExp_AST: public BaseAST
 {
 public:
     unique_ptr<BaseAST> uexp;
-    void Dump() const override {}
+    
     void DistriReg(int lb) override 
     {
         uexp->DistriReg(lb);
@@ -355,7 +268,7 @@ public:
     unique_ptr<BaseAST> mexp;
     unique_ptr<BaseAST> uexp;
     string op;
-    void Dump() const override {}
+    
     void DistriReg(int lb) override 
     {
         mexp->DistriReg(lb);
@@ -387,7 +300,7 @@ class AExp2MulExp_AST: public BaseAST
 {
 public: 
     unique_ptr<BaseAST> mexp;
-    void Dump() const override {}
+    
     void DistriReg(int lb) override 
     {
         mexp->DistriReg(lb);
@@ -407,7 +320,7 @@ public:
     unique_ptr<BaseAST> aexp;
     unique_ptr<BaseAST> mexp;
     string op;
-    void Dump() const override {}
+    
     void DistriReg(int lb) override 
     {
         aexp->DistriReg(lb);
@@ -435,7 +348,7 @@ class RExp2AExp_AST: public BaseAST
 {
 public:
     unique_ptr<BaseAST> aexp;
-    void Dump() const override {}
+    
     void DistriReg(int lb) override 
     {
         aexp->DistriReg(lb);
@@ -456,7 +369,6 @@ public:
     unique_ptr<BaseAST> aexp;
     string rel;
 
-    void Dump() const override {}
     void DistriReg(int lb) override 
     {
         rexp->DistriReg(lb);
@@ -490,7 +402,7 @@ class EExp2RExp_AST: public BaseAST
 {
 public:
     unique_ptr<BaseAST> rexp;
-    void Dump() const override {}
+    
     void DistriReg(int lb) override 
     {
         rexp->DistriReg(lb);
@@ -512,7 +424,6 @@ public:
     string rel;
     Register imm_reg; // 用于计算中间结果的寄存器
 
-    void Dump() const override {}
     void DistriReg(int lb) override 
     {
         eexp->DistriReg(lb);
@@ -557,7 +468,7 @@ class LAExp2EExp_AST: public BaseAST
 {
 public:
     unique_ptr<BaseAST> eexp;
-    void Dump() const override {}
+    
     void DistriReg(int lb) override 
     {
         eexp->DistriReg(lb);
@@ -578,7 +489,6 @@ public:
     unique_ptr<BaseAST> eexp;
     Register imm_reg1, imm_reg2, imm_reg3; // 用于计算中间结果的临时寄存器
 
-    void Dump() const override {}
     void DistriReg(int lb) override 
     {
         laexp->DistriReg(lb);
@@ -612,7 +522,7 @@ class LOExp2LAExp_AST: public BaseAST
 {
 public:
     unique_ptr<BaseAST> laexp;
-    void Dump() const override {}
+    
     void DistriReg(int lb) override 
     {
         laexp->DistriReg(lb);
@@ -633,7 +543,6 @@ public:
     unique_ptr<BaseAST> laexp;
     Register imm_reg1, imm_reg2;
 
-    void Dump() const override {}
     void DistriReg(int lb) override 
     {
         loexp->DistriReg(lb);
