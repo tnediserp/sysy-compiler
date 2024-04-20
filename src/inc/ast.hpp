@@ -10,10 +10,11 @@ using namespace std;
 class Register
 {
 public:
-    int num;
-    int value;
-    bool real; // 寄存器是否真实存在？比如对于一个number,我们使用虚空寄存器来存它。
+    int num; // 寄存器编号
+    int value; // 寄存器内容
+    bool real; // 寄存器是否真实存在？比如对于一个number,我们使用虚空寄存器来存它，此时该虚空寄存器不会占用一个寄存器编号
 
+    // 寄存器深拷贝
     Register& operator = (const Register &reg)
     {
         num = reg.num;
@@ -22,6 +23,12 @@ public:
         return *this;
     }
 
+    /**
+     * 输出寄存器
+     * 
+     * 如果该寄存器真实存在，那么输出编号
+     * 如果该寄存器是虚空寄存器，那么输出内容
+     */
     friend ostream& operator << (ostream &os, const Register &reg)
     {
         if (reg.real)
@@ -30,12 +37,14 @@ public:
         return os;
     }
 
+    // 寄存器编号更新
     Register operator + (const int x)
     {
         Register reg;
         reg = *this;
         reg.num = num + x;
-        reg.real = true;
+        if (x > 0)
+            reg.real = true;
         return reg;
     }
 };
@@ -302,6 +311,8 @@ public:
     {
         uexp->DistriReg(lb);
 
+        assert(uop == "+" || uop == "-" || uop == "!");
+
         if (uop != "+")
             reg = uexp->reg + 1;
         else reg = uexp->reg;
@@ -347,15 +358,18 @@ public:
     void Dump() const override {}
     void DistriReg(int lb) override 
     {
-        uexp->DistriReg(lb);
-        mexp->DistriReg(uexp->reg.num);
-        reg = mexp->reg + 1;
+        mexp->DistriReg(lb);
+        uexp->DistriReg(mexp->reg.num);
+        
+        reg = uexp->reg + 1;
     }
 
     void DumpIR(ostream &os) const override
-    {
-        uexp->DumpIR(os);
+    {   
         mexp->DumpIR(os);
+        uexp->DumpIR(os);
+
+        assert(op == "*" || op == "/" || op == "%");
         
         if (op == "*")
             os << reg << " = mul " << mexp->reg << ", " << uexp->reg << endl;
@@ -363,10 +377,8 @@ public:
         else if (op == "/")
             os << reg << " = div " << mexp->reg << ", " << uexp->reg << endl;
 
-        else if (op == "%")
+        else // if (op == "%")
             os << reg << " = mod " << mexp->reg << ", " << uexp->reg << endl;
-
-        else cerr << "MExp2MExp_UExp_AST: bad operator." << endl;
     }
 };
 
@@ -398,23 +410,23 @@ public:
     void Dump() const override {}
     void DistriReg(int lb) override 
     {
-        mexp->DistriReg(lb);
-        aexp->DistriReg(mexp->reg.num);
-        reg = aexp->reg + 1;
+        aexp->DistriReg(lb);
+        mexp->DistriReg(aexp->reg.num);
+        reg = mexp->reg + 1;
     }
 
     void DumpIR(ostream &os) const override
     {
-        mexp->DumpIR(os);
         aexp->DumpIR(os);
+        mexp->DumpIR(os);
+
+        assert(op == "+" || op == "-");
         
         if (op == "+")
             os << reg << " = add " << aexp->reg << ", " << mexp->reg << endl;
         
-        else if (op == "-")
+        else // if (op == "-")
             os << reg << " = sub " << aexp->reg << ", " << mexp->reg << endl;
-
-        else cerr << "AExp2AExp_MExp_AST: bad operator." << endl;
     }
 };
 
@@ -447,15 +459,17 @@ public:
     void Dump() const override {}
     void DistriReg(int lb) override 
     {
-        aexp->DistriReg(lb);
-        rexp->DistriReg(aexp->reg.num);
-        reg = rexp->reg + 1;
+        rexp->DistriReg(lb);
+        aexp->DistriReg(rexp->reg.num);
+        reg = aexp->reg + 1;
     }
 
     void DumpIR(ostream &os) const override
     {
-        aexp->DumpIR(os);
         rexp->DumpIR(os);
+        aexp->DumpIR(os);
+
+        assert(rel == "<" || rel == ">" || rel == "<=" || rel == ">=");
         
         if (rel == "<")
             os << reg << " = lt " << rexp->reg << ", " << aexp->reg << endl;
@@ -466,10 +480,8 @@ public:
         else if (rel == "<=")
             os << reg << " = le " << rexp->reg << ", " << aexp->reg << endl;
         
-        else if (rel == ">=")
+        else // if (rel == ">=")
             os << reg << " = ge " << rexp->reg << ", " << aexp->reg << endl;
-
-        else cerr << "RExp2R_rel_A_AST: bad operator." << endl;
     }
 };
 
@@ -503,28 +515,28 @@ public:
     void Dump() const override {}
     void DistriReg(int lb) override 
     {
-        rexp->DistriReg(lb);
-        eexp->DistriReg(rexp->reg.num);
+        eexp->DistriReg(lb);
+        rexp->DistriReg(eexp->reg.num);
 
         assert(rel == "==" || rel == "!=");
 
         // 需要使用imm_reg保存中间结果
         if (rel == "!=")
         {
-            imm_reg = eexp->reg + 1;
-            reg = eexp->reg + 2;
+            imm_reg = rexp->reg + 1;
+            reg = rexp->reg + 2;
         }
         else 
         {
-            imm_reg = eexp->reg + 1;
-            reg = eexp->reg + 1;
+            imm_reg = rexp->reg + 1;
+            reg = rexp->reg + 1;
         }
     }
 
     void DumpIR(ostream &os) const override
     {
-        rexp->DumpIR(os);
         eexp->DumpIR(os);
+        rexp->DumpIR(os);
 
         assert(rel == "==" || rel == "!=");
         
@@ -569,20 +581,20 @@ public:
     void Dump() const override {}
     void DistriReg(int lb) override 
     {
-        eexp->DistriReg(lb);
-        laexp->DistriReg(eexp->reg.num);
+        laexp->DistriReg(lb);
+        eexp->DistriReg(laexp->reg.num);
 
         // 需要使用imm_reg保存中间结果
-        imm_reg1 = laexp->reg + 1;
-        imm_reg2 = laexp->reg + 2;
-        imm_reg3 = laexp->reg + 3;
-        reg = laexp->reg + 4;
+        imm_reg1 = eexp->reg + 1;
+        imm_reg2 = eexp->reg + 2;
+        imm_reg3 = eexp->reg + 3;
+        reg = eexp->reg + 4;
     }
 
     void DumpIR(ostream &os) const override
     {
-        eexp->DumpIR(os);
         laexp->DumpIR(os);
+        eexp->DumpIR(os);
 
         // laexp == 0？
         os << imm_reg1 << " = eq " << laexp->reg << ", 0" <<endl; 
@@ -624,19 +636,19 @@ public:
     void Dump() const override {}
     void DistriReg(int lb) override 
     {
-        laexp->DistriReg(lb);
-        loexp->DistriReg(laexp->reg.num);
+        loexp->DistriReg(lb);
+        laexp->DistriReg(loexp->reg.num);
 
         // 需要使用imm_reg保存中间结果
-        imm_reg1 = loexp->reg + 1;
-        imm_reg2 = loexp->reg + 2;
-        reg = loexp->reg + 3;
+        imm_reg1 = laexp->reg + 1;
+        imm_reg2 = laexp->reg + 2;
+        reg = laexp->reg + 3;
     }
 
     void DumpIR(ostream &os) const override
     {
-        laexp->DumpIR(os);
         loexp->DumpIR(os);
+        laexp->DumpIR(os);
 
         // 按位或非零，则一定有一个为真
         os << imm_reg1 << " = or " << loexp->reg << ", " << laexp->reg << endl;
