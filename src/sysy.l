@@ -28,6 +28,12 @@ Decimal       [1-9][0-9]*
 Octal         0[0-7]*
 Hexadecimal   0[xX][0-9a-fA-F]+
 
+/* 比较大小 */
+Rel           "<"|">"|"<="|">="
+
+/* 逻辑等于或不等于 */
+Eq            "=="|"!="
+
 %%
 
 {WhiteSpace}    { /* 忽略, 不做任何操作 */ }
@@ -36,8 +42,12 @@ Hexadecimal   0[xX][0-9a-fA-F]+
 
 "int"           { return INT; }
 "return"        { return RETURN; }
+"&&"            { return LAND; }
+"||"            { return LOR; }
 
 {Identifier}    { yylval.str_val = new string(yytext); return IDENT; }
+{Rel}           { yylval.str_val = new string(yytext); return REL; }
+{Eq}            { yylval.str_val = new string(yytext); return EQ; }
 
 {Decimal}       { yylval.int_val = strtol(yytext, nullptr, 0); return INT_CONST; }
 {Octal}         { yylval.int_val = strtol(yytext, nullptr, 0); return INT_CONST; }

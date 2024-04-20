@@ -49,12 +49,12 @@ using namespace std;
 
 // lexer 返回的所有 token 种类的声明
 // 注意 IDENT 和 INT_CONST 会返回 token 的值, 分别对应 str_val 和 int_val
-%token INT RETURN
-%token <str_val> IDENT
+%token INT RETURN LAND LOR
+%token <str_val> IDENT REL EQ
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp
+%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp
 %type <int_val> Number
 %type <str_val> UnaryOp
 
@@ -126,9 +126,9 @@ Number
   ;
 
 Exp
-  : AddExp {
+  : LOrExp {
     auto ast = new ExpAST();
-    ast->aexp = unique_ptr<BaseAST>($1);
+    ast->loexp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   ;
@@ -225,6 +225,61 @@ AddExp
     $$ = ast;
   }
   ;
+  
+RelExp
+  : AddExp {
+    auto ast = new RExp2AExp_AST();
+    ast->aexp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | RelExp REL AddExp {
+    auto ast = new RExp2R_rel_A_AST();
+    ast->rexp = unique_ptr<BaseAST>($1);
+    ast->aexp = unique_ptr<BaseAST>($3);
+    ast->rel = *unique_ptr<string>($2);
+    $$ = ast;
+  };
+
+EqExp
+  : RelExp {
+    auto ast = new EExp2RExp_AST();
+    ast->rexp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | EqExp EQ RelExp {
+    auto ast = new EExp2E_eq_R_AST();
+    ast->eexp = unique_ptr<BaseAST>($1);
+    ast->rexp = unique_ptr<BaseAST>($3);
+    ast->rel = *unique_ptr<string>($2);
+    $$ = ast;
+  };
+
+LAndExp
+  : EqExp {
+    auto ast = new LAExp2EExp_AST();
+    ast->eexp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | LAndExp LAND EqExp {
+    auto ast = new LAExp2L_and_E_AST();
+    ast->laexp = unique_ptr<BaseAST>($1);
+    ast->eexp = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  };
+
+LOrExp
+  : LAndExp {
+    auto ast = new LOExp2LAExp_AST();
+    ast->laexp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | LOrExp LOR LAndExp {
+    auto ast = new LOExp2L_or_LA_AST();
+    ast->loexp = unique_ptr<BaseAST>($1);
+    ast->laexp = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+
 
 %%
 

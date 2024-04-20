@@ -3,6 +3,7 @@
 #include <string>
 #include <iostream>
 #include <inc/koopa_ir.hpp>
+#include <cassert>
 using namespace std;
 
 // 寄存器类
@@ -213,22 +214,22 @@ public:
     }
 };
 
-// Exp ::= AddExp
+// Exp ::= LOrExp
 class ExpAST : public BaseAST
 {
 public:
-    unique_ptr<BaseAST> aexp;
+    unique_ptr<BaseAST> loexp;
 
     void Dump() const override {}
     // unique_ptr<BaseIR> AST2IR() const override {return NULL;}
     void DistriReg(int lb) override
     {
-        aexp->DistriReg(lb);
-        reg = aexp->reg;
+        loexp->DistriReg(lb);
+        reg = loexp->reg;
     }
     void DumpIR(ostream &os) const override
     {
-        aexp->DumpIR(os);
+        loexp->DumpIR(os);
     }
 };
 
@@ -414,5 +415,232 @@ public:
             os << reg << " = sub " << aexp->reg << ", " << mexp->reg << endl;
 
         else cerr << "AExp2AExp_MExp_AST: bad operator." << endl;
+    }
+};
+
+// RelExp ::= AddExp
+class RExp2AExp_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> aexp;
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        aexp->DistriReg(lb);
+        reg = aexp->reg;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        aexp->DumpIR(os);
+    }
+};
+
+// RelExp ::= RelExp ("<" | ">" | "<=" | ">=") AddExp
+class RExp2R_rel_A_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> rexp;
+    unique_ptr<BaseAST> aexp;
+    string rel;
+
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        aexp->DistriReg(lb);
+        rexp->DistriReg(aexp->reg.num);
+        reg = rexp->reg + 1;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        aexp->DumpIR(os);
+        rexp->DumpIR(os);
+        
+        if (rel == "<")
+            os << reg << " = lt " << rexp->reg << ", " << aexp->reg << endl;
+        
+        else if (rel == ">")
+            os << reg << " = gt " << rexp->reg << ", " << aexp->reg << endl;
+
+        else if (rel == "<=")
+            os << reg << " = le " << rexp->reg << ", " << aexp->reg << endl;
+        
+        else if (rel == ">=")
+            os << reg << " = ge " << rexp->reg << ", " << aexp->reg << endl;
+
+        else cerr << "RExp2R_rel_A_AST: bad operator." << endl;
+    }
+};
+
+// EqExp ::= RelExp
+class EExp2RExp_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> rexp;
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        rexp->DistriReg(lb);
+        reg = rexp->reg;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        rexp->DumpIR(os);
+    }
+};
+
+// EqExp ::= EqExp ("==" | "!=") RelExp
+class EExp2E_eq_R_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> eexp;
+    unique_ptr<BaseAST> rexp;
+    string rel;
+    Register imm_reg; // 用于计算中间结果的寄存器
+
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        rexp->DistriReg(lb);
+        eexp->DistriReg(rexp->reg.num);
+
+        assert(rel == "==" || rel == "!=");
+
+        // 需要使用imm_reg保存中间结果
+        if (rel == "!=")
+        {
+            imm_reg = eexp->reg + 1;
+            reg = eexp->reg + 2;
+        }
+        else 
+        {
+            imm_reg = eexp->reg + 1;
+            reg = eexp->reg + 1;
+        }
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        rexp->DumpIR(os);
+        eexp->DumpIR(os);
+
+        assert(rel == "==" || rel == "!=");
+        
+        if (rel == "==")
+            os << reg << " = eq " << eexp->reg << ", " << rexp->reg << endl;
+        
+        else // (rel == "!=")
+        {
+            // 先判断两者相等，再取非
+            os << imm_reg << " = eq "<< eexp->reg << ", " << rexp->reg << endl;
+            os << reg << " = eq " << imm_reg << ", 0" << endl;
+        }
+    }
+};
+
+// LAndExp ::= EqExp
+class LAExp2EExp_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> eexp;
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        eexp->DistriReg(lb);
+        reg = eexp->reg;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        eexp->DumpIR(os);
+    }
+};
+
+// LAndExp ::= LAndExp "&&" EqExp
+class LAExp2L_and_E_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> laexp;
+    unique_ptr<BaseAST> eexp;
+    Register imm_reg1, imm_reg2, imm_reg3; // 用于计算中间结果的临时寄存器
+
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        eexp->DistriReg(lb);
+        laexp->DistriReg(eexp->reg.num);
+
+        // 需要使用imm_reg保存中间结果
+        imm_reg1 = laexp->reg + 1;
+        imm_reg2 = laexp->reg + 2;
+        imm_reg3 = laexp->reg + 3;
+        reg = laexp->reg + 4;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        eexp->DumpIR(os);
+        laexp->DumpIR(os);
+
+        // laexp == 0？
+        os << imm_reg1 << " = eq " << laexp->reg << ", 0" <<endl; 
+        // eexp = 0?
+        os << imm_reg2 << " = eq " << eexp->reg << ", 0" <<endl; 
+        // laexp == 0 || eexp == 0?
+        os << imm_reg3 << " = or " << imm_reg1 << ", " << imm_reg2 << endl;
+        // 取反
+        os << reg << " = eq " << imm_reg3 << ", 0" << endl;
+    }
+};
+
+// LOrExp ::= LAndExp
+class LOExp2LAExp_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> laexp;
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        laexp->DistriReg(lb);
+        reg = laexp->reg;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        laexp->DumpIR(os);
+    }
+};
+
+// LOrExp ::= LOrExp "||" LAndExp
+class LOExp2L_or_LA_AST: public BaseAST 
+{
+public: 
+    unique_ptr<BaseAST> loexp;
+    unique_ptr<BaseAST> laexp;
+    Register imm_reg1, imm_reg2;
+
+    void Dump() const override {}
+    void DistriReg(int lb) override 
+    {
+        laexp->DistriReg(lb);
+        loexp->DistriReg(laexp->reg.num);
+
+        // 需要使用imm_reg保存中间结果
+        imm_reg1 = loexp->reg + 1;
+        imm_reg2 = loexp->reg + 2;
+        reg = loexp->reg + 3;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        laexp->DumpIR(os);
+        loexp->DumpIR(os);
+
+        // 按位或非零，则一定有一个为真
+        os << imm_reg1 << " = or " << loexp->reg << ", " << laexp->reg << endl;
+        os << imm_reg2 << " = eq " << imm_reg1 << ", 0" << endl;
+        os << reg << " = eq " << imm_reg2 << ", 0" << endl;
     }
 };
