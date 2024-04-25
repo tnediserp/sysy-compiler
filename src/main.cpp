@@ -80,7 +80,7 @@ string cast_Reg(int value_num)
 string next_Reg(string reg)
 {
     string str = reg;
-    assert((reg[0] == 't' && reg[1] >= '0' && reg[1] <= '6') || (reg[0] == 'a' && reg[1] >= '0' && reg[1] <= '6'));
+    assert((reg[0] == 't' && reg[1] >= '0' && reg[1] <= '6') || (reg[0] == 'a' && reg[1] >= '0'));
 
     if (reg == "t6")
         return "a0";
@@ -123,8 +123,11 @@ void Dist_regs(const koopa_raw_slice_t &slice)
             case KOOPA_RSIK_VALUE:
             {
                 // 访问指令
-                koopa_raw_value_t pp = reinterpret_cast<koopa_raw_value_t>(ptr);
-                Name_value(pp, val_num);
+                koopa_raw_value_t value = reinterpret_cast<koopa_raw_value_t>(ptr);
+                if (value->kind.tag == KOOPA_RVT_RETURN)
+                    registers[value] = "a0";
+                else 
+                    Name_value(value, val_num);
                 val_num++;
                 break;
             }
@@ -264,10 +267,16 @@ void Load_imm(const koopa_raw_value_t &value, string reg, ostream &os)
         return;
     
     assert(value->kind.tag == KOOPA_RVT_INTEGER);
-    registers[value] = reg;
-    os << "li " << reg << ", ";
-    DumpRISC(value->kind.data.integer, os);
-    os << endl;
+    
+    if (value->kind.data.integer.value == 0)
+        registers[value] = "x0";
+    else 
+    {
+        registers[value] = reg;
+        os << "li " << reg << ", ";
+        DumpRISC(value->kind.data.integer, os);
+        os << endl;
+    } 
 }
 
 // binary
