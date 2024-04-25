@@ -7,6 +7,7 @@
 #include <cstring>
 #include <inc/ast.hpp>
 #include <inc/koopa.h> // 使用文档提供的文本IR到内存IR转换的标准接口
+#include <map>
 
 using namespace std;
 
@@ -21,13 +22,23 @@ using namespace std;
 extern FILE *yyin;
 extern int yyparse(unique_ptr<BaseAST> &ast);
 koopa_raw_program_t str2raw(const char *str);
+void Dist_regs(const koopa_raw_program_t &program);
+void Dist_regs(const koopa_raw_slice_t &slice);
+void Dist_regs(const koopa_raw_function_t &func);
+void Dist_regs(const koopa_raw_basic_block_t &bb);
+void Dist_regs(const koopa_raw_value_t &value);
 void DumpRISC(const koopa_raw_program_t &program, ostream &os);
 void DumpRISC(const koopa_raw_slice_t &slice, ostream &os);
 void DumpRISC(const koopa_raw_function_t &func, ostream &os);
 void DumpRISC(const koopa_raw_basic_block_t &bb, ostream &os);
 void DumpRISC(const koopa_raw_value_t &value, ostream &os);
 void DumpRISC(const koopa_raw_integer_t &integer, ostream &os);
-void DumpRISC(const koopa_raw_return_t &ret, ostream &os);
+void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os);
+void DumpRISC(const koopa_raw_binary_t &binary, string reg, ostream &os);
+void CheckReg(const koopa_raw_value_t &value);
+void Load_imm(const koopa_raw_value_t &value, string reg, ostream &os);
+
+map<koopa_raw_value_t, string> registers;
 
 // 将文本形式IR转换为内存形式
 koopa_raw_program_t str2raw(const char *str)
@@ -43,6 +54,100 @@ koopa_raw_program_t str2raw(const char *str)
     // 释放 Koopa IR 程序占用的内存
     koopa_delete_program(program);
     return raw;
+}
+
+/**
+ * 将整数映射到寄存器名
+ * 
+ */
+string cast_Reg(int value_num)
+{
+    assert(value_num <= 14);
+    string str;
+    if (value_num >= 0 && value_num <= 6)
+    {
+        str = "t" + string(1, value_num + '0');
+        return str;
+    }
+
+    else // if (value_num >= 7 && value_num <= 14)
+    {
+        str = "a" + string(1, value_num - 7 + '0');
+        return str;
+    }    
+}
+
+string next_Reg(string reg)
+{
+    string str = reg;
+    assert((reg[0] == 't' && reg[1] >= '0' && reg[1] <= '6') || (reg[0] == 'a' && reg[1] >= '0' && reg[1] <= '6'));
+
+    if (reg == "t6")
+        return "a0";
+
+    str[1] = reg[1] + 1;
+    return str;
+}
+
+/**
+ * 给指令命名
+ * 
+ */
+void Name_value(koopa_raw_value_t value, int val_num)
+{
+    registers[value] = cast_Reg(val_num);
+}
+
+void Dist_regs(const koopa_raw_program_t &program)
+{
+    Dist_regs(program.values);
+    Dist_regs(program.funcs);
+}
+
+void Dist_regs(const koopa_raw_slice_t &slice)
+{
+    int val_num = 0;
+    for (size_t i = 0; i < slice.len; ++i) 
+    {
+        auto ptr = slice.buffer[i];
+        // 根据 slice 的 kind 决定将 ptr 视作何种元素
+        switch (slice.kind) {
+            case KOOPA_RSIK_FUNCTION:
+                // 访问函数
+                Dist_regs(reinterpret_cast<koopa_raw_function_t>(ptr));
+                break;
+            case KOOPA_RSIK_BASIC_BLOCK:
+                // 访问基本块
+                Dist_regs(reinterpret_cast<koopa_raw_basic_block_t>(ptr));
+                break;
+            case KOOPA_RSIK_VALUE:
+            {
+                // 访问指令
+                koopa_raw_value_t pp = reinterpret_cast<koopa_raw_value_t>(ptr);
+                Name_value(pp, val_num);
+                val_num++;
+                break;
+            }
+            default:
+                // 我们暂时不会遇到其他内容, 于是不对其做任何处理
+                assert(false);
+        }
+    }
+}
+
+void Dist_regs(const koopa_raw_function_t &func)
+{
+    Dist_regs(func->bbs);
+}
+
+void Dist_regs(const koopa_raw_basic_block_t &bb)
+{
+    Dist_regs(bb->insts);
+}
+
+void Dist_regs(const koopa_raw_value_t &value)
+{
+
 }
 
 
@@ -73,9 +178,11 @@ void DumpRISC(const koopa_raw_slice_t &slice, ostream &os)
                 DumpRISC(reinterpret_cast<koopa_raw_basic_block_t>(ptr), os);
                 break;
             case KOOPA_RSIK_VALUE:
+            {
                 // 访问指令
                 DumpRISC(reinterpret_cast<koopa_raw_value_t>(ptr), os);
                 break;
+            }
             default:
                 // 我们暂时不会遇到其他内容, 于是不对其做任何处理
                 assert(false);
@@ -97,7 +204,11 @@ void DumpRISC(const koopa_raw_basic_block_t &bb, ostream &os)
     DumpRISC(bb->insts, os);
 }
 
-// 访问指令
+
+/**
+ * 访问指令
+ * 
+ */
 void DumpRISC(const koopa_raw_value_t &value, ostream &os)
 {
     // 根据指令类型判断后续需要如何访问
@@ -106,15 +217,19 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
     {
         case KOOPA_RVT_RETURN:
             // 访问 return 指令
-            DumpRISC(kind.data.ret, os);
+            DumpRISC(kind.data.ret, registers[value], os);
             break;
         case KOOPA_RVT_INTEGER:
             // 访问 integer 指令
             DumpRISC(kind.data.integer, os);
             break;
+        case KOOPA_RVT_BINARY: 
+            DumpRISC(kind.data.binary, registers[value], os);
+            break;
         default:
             // 其他类型暂时遇不到
-            assert(false);
+            os << kind.tag << endl;
+            // assert(false);
     }
 }
 
@@ -127,11 +242,108 @@ void DumpRISC(const koopa_raw_integer_t &integer, ostream &os)
 }
 
 // ret 
-void DumpRISC(const koopa_raw_return_t &ret, ostream &os)
+void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os)
 {
-    os << "li a0, ";
-    DumpRISC(ret.value, os);
-    os << endl << "ret" << endl;
+    Load_imm(ret.value, reg, os);
+    CheckReg(ret.value);
+    os << "mv a0, " << registers[ret.value] << endl;
+    os << "ret" << endl;
+}
+
+// 检查指令是否已分配寄存器
+void CheckReg(const koopa_raw_value_t &value)
+{
+    assert(registers.find(value) != registers.end());
+}
+
+// 将立即数存入临时寄存器
+void Load_imm(const koopa_raw_value_t &value, string reg, ostream &os)
+{
+    // 已经分配了寄存器
+    if (registers.find(value) != registers.end())
+        return;
+    
+    assert(value->kind.tag == KOOPA_RVT_INTEGER);
+    registers[value] = reg;
+    os << "li " << reg << ", ";
+    DumpRISC(value->kind.data.integer, os);
+    os << endl;
+}
+
+// binary
+void DumpRISC(const koopa_raw_binary_t &binary, string reg, ostream &os)
+{
+    // 如果lhs或rhs是立即数，将它们load到寄存器中
+    Load_imm(binary.lhs, reg, os);
+    Load_imm(binary.rhs, next_Reg(reg), os);
+
+    string lreg = registers[binary.lhs], rreg = registers[binary.rhs];
+
+    switch (binary.op)
+    {
+    case KOOPA_RBO_EQ:
+        // xor t0, t0, x0;
+        os << "xor " << reg << ", " << lreg << ", " << rreg << endl;
+
+        // seqz t0
+        os << "seqz " << reg << ", " << reg << endl;
+        break;
+
+    case KOOPA_RBO_ADD:
+        os << "add " << reg << ", "<< lreg << ", " << rreg << endl;
+        break;
+    
+    case KOOPA_RBO_SUB:
+        os << "sub " << reg << ", "<< lreg << ", " << rreg << endl;
+        break;
+
+    case KOOPA_RBO_MUL:
+        os << "mul " << reg << ", "<< lreg << ", " << rreg << endl;
+        break;
+
+
+    case KOOPA_RBO_DIV: 
+        os << "div " << reg << ", "<< lreg << ", " << rreg << endl;
+        break;
+
+    case KOOPA_RBO_MOD:
+        os << "rem " << reg << ", "<< lreg << ", " << rreg << endl;
+        break;
+
+    case KOOPA_RBO_AND:
+        os << "and " << reg << ", "<< lreg << ", " << rreg << endl;
+        break;
+    
+    case KOOPA_RBO_OR:
+        os << "or " << reg << ", "<< lreg << ", " << rreg << endl;
+        break;
+    
+    case KOOPA_RBO_XOR:
+        os << "xor " << reg << ", "<< lreg << ", " << rreg << endl;
+        break;
+
+    case KOOPA_RBO_GT:
+        os << "sgt " << reg << ", "<< lreg << ", " << rreg << endl;
+        break;
+    
+    case KOOPA_RBO_LT:
+        os << "slt " << reg << ", "<< lreg << ", " << rreg << endl;
+        break;
+
+    case KOOPA_RBO_GE:
+        os << "slt " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "seqz " << reg << ", " << reg << endl;
+        break;
+
+    case KOOPA_RBO_LE:
+        os << "sgt " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "seqz " << reg << ", " << reg << endl;
+        break;
+
+    default:
+        assert(false);
+        break;
+    }
 }
 
 
@@ -180,6 +392,9 @@ int main(int argc, const char *argv[]) {
         fread(str, 1, FILE_LEN, fp);
         koopa_raw_program_t raw = str2raw(str);
         delete [] str;
+
+        registers.empty();
+        Dist_regs(raw);
 
         ofstream yyout;
         yyout.open(output);

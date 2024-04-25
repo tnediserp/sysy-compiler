@@ -24,9 +24,7 @@ main /*fejfefej*/
     /* eieuuierwuf  jhgerirtruuwiuet
     //ierruurug ruiu
     This a random comment. I want to use it to corret the wrong answers in this program. However, this seems inpossible. .*/
-    ((1<=2)+!(((3==6)*(7-9*3)!=(8674-923>=3))))
-    &&
-    (2344+7*(4||(3!=5)))
+    1+2/3 == 3
 
     /*nfejfnernnerf*/
     

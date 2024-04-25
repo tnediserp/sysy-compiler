@@ -327,6 +327,7 @@ typedef enum koopa_raw_binary_op koopa_raw_binary_op_t;
 typedef struct {
   /// Operator.
   koopa_raw_binary_op_t op;
+  // lhs 和 rhs 是指向前面某条指令的指针
   /// Left-hand side value.
   koopa_raw_value_t lhs;
   /// Right-hand side value.
