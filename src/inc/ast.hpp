@@ -58,7 +58,7 @@ public:
     virtual ~BaseAST() = default;
     virtual void DumpIR(ostream &os) const = 0; // 根据AST输出文本形式IR
     virtual void DistriReg(int lb){} // 分配寄存器，编号以lb为下界
-    virtual int Value(){} // 表达式求值
+    virtual int Value() const{return 0;}  // 表达式求值
 };
 
 
@@ -162,7 +162,7 @@ public:
         loexp->DumpIR(os);
     }
 
-    int Value() override
+    int Value() const override
     {
         return loexp->Value();
     }
@@ -184,7 +184,7 @@ public:
         exp->DumpIR(os);
     }
 
-    int Value() override
+    int Value() const override
     {
         return exp->Value();
     }
@@ -206,7 +206,7 @@ public:
     {
 
     }
-    int Value() override 
+    int Value() const override 
     {
         return num;
     }
@@ -227,7 +227,7 @@ public:
     {
         pexp->DumpIR(os);
     }
-    int Value() override
+    int Value() const override
     {
         return pexp->Value();
     }
@@ -262,7 +262,7 @@ public:
         else return;
     }
 
-    int Value() override
+    int Value() const override
     {
         assert(uop == "+" || uop == "-" || uop == "!");
         if (uop == "+")
@@ -290,7 +290,7 @@ public:
         uexp->DumpIR(os);
     }
 
-    int Value() override
+    int Value() const override
     {
         return uexp->Value();
     }
@@ -329,7 +329,7 @@ public:
             os << reg << " = mod " << mexp->reg << ", " << uexp->reg << endl;
     }
 
-    int Value() override 
+    int Value() const override 
     {
         assert(op == "*" || op == "/" || op == "%");
         
@@ -361,7 +361,7 @@ public:
         mexp->DumpIR(os);
     }
 
-    int Value() override
+    int Value() const override
     {
         return mexp->Value();
     }
@@ -396,7 +396,7 @@ public:
             os << reg << " = sub " << aexp->reg << ", " << mexp->reg << endl;
     }
 
-    int Value() override
+    int Value() const override
     {
         assert(op == "+" || op == "-");
         
@@ -425,7 +425,7 @@ public:
         aexp->DumpIR(os);
     }
 
-    int Value() override 
+    int Value() const override 
     {
         return aexp->Value();
     }
@@ -466,7 +466,7 @@ public:
             os << reg << " = ge " << rexp->reg << ", " << aexp->reg << endl;
     }
 
-    int Value() override
+    int Value() const override
     {
         assert(rel == "<" || rel == ">" || rel == "<=" || rel == ">=");
         
@@ -501,7 +501,7 @@ public:
         rexp->DumpIR(os);
     }
 
-    int Value() override
+    int Value() const override
     {
         return rexp->Value();
     }
@@ -554,7 +554,7 @@ public:
         }
     }
 
-    int Value() override 
+    int Value() const override 
     {
         assert(rel == "==" || rel == "!=");
         
@@ -583,7 +583,7 @@ public:
         eexp->DumpIR(os);
     }
 
-    int Value() override
+    int Value() const override
     {
         return eexp->Value();
     }
@@ -624,7 +624,7 @@ public:
         os << reg << " = eq " << imm_reg3 << ", 0" << endl;
     }
 
-    int Value() override
+    int Value() const override
     {
         return laexp->Value() && eexp->Value();
     }
@@ -647,7 +647,7 @@ public:
         laexp->DumpIR(os);
     }
 
-    int Value() override
+    int Value() const override
     {
         return laexp->Value();
     }
@@ -683,7 +683,7 @@ public:
         os << reg << " = eq " << imm_reg2 << ", 0" << endl;
     }
 
-    int Value() override
+    int Value() const override
     {
         return loexp->Value() || laexp->Value();
     }
