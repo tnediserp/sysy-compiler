@@ -36,7 +36,8 @@ void DumpRISC(const koopa_raw_integer_t &integer, ostream &os);
 void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os);
 void DumpRISC(const koopa_raw_binary_t &binary, string reg, ostream &os);
 void CheckReg(const koopa_raw_value_t &value);
-void Load_imm(const koopa_raw_value_t &value, string reg, ostream &os);
+bool Load_imm(const koopa_raw_value_t &value, string reg);
+void Load_imm_dump(const koopa_raw_value_t &value, ostream &os);
 
 map<koopa_raw_value_t, string> registers;
 
@@ -247,7 +248,9 @@ void DumpRISC(const koopa_raw_integer_t &integer, ostream &os)
 // ret 
 void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os)
 {
-    Load_imm(ret.value, reg, os);
+    if (Load_imm(ret.value, reg))
+        Load_imm_dump(ret.value, os);
+    
     CheckReg(ret.value);
     os << "mv a0, " << registers[ret.value] << endl;
     os << "ret" << endl;
@@ -259,38 +262,54 @@ void CheckReg(const koopa_raw_value_t &value)
     assert(registers.find(value) != registers.end());
 }
 
-// 将立即数存入临时寄存器
-void Load_imm(const koopa_raw_value_t &value, string reg, ostream &os)
+// 给立即数分配寄存器，若已分配（例如一条binary指令），返回false
+// 否则返回true
+bool Load_imm(const koopa_raw_value_t &value, string reg)
 {
     // 已经分配了寄存器
     if (registers.find(value) != registers.end())
-        return;
+        return false;
     
     assert(value->kind.tag == KOOPA_RVT_INTEGER);
     
     if (value->kind.data.integer.value == 0)
+    {
         registers[value] = "x0";
+        return false;
+    }
+        
     else 
     {
         registers[value] = reg;
-        os << "li " << reg << ", ";
-        DumpRISC(value->kind.data.integer, os);
-        os << endl;
+        return true;
     } 
+}
+
+// 输出 li reg, imm 指令
+void Load_imm_dump(const koopa_raw_value_t &value, ostream &os)
+{
+    CheckReg(value);
+    assert(value->kind.tag == KOOPA_RVT_INTEGER);
+
+    os << "li " << registers[value] << ", " << value->kind.data.integer.value << endl;
 }
 
 // binary
 void DumpRISC(const koopa_raw_binary_t &binary, string reg, ostream &os)
 {
     // 如果lhs或rhs是立即数，将它们load到寄存器中
-    Load_imm(binary.lhs, reg, os);
-    Load_imm(binary.rhs, next_Reg(reg), os);
+    bool lreg_li = Load_imm(binary.lhs, reg);
+    bool rreg_li = Load_imm(binary.rhs, next_Reg(reg));
 
     string lreg = registers[binary.lhs], rreg = registers[binary.rhs];
+
+    if (lreg_li) Load_imm_dump(binary.lhs, os);
 
     switch (binary.op)
     {
     case KOOPA_RBO_EQ:
+        if (rreg_li) Load_imm_dump(binary.rhs, os);
+
         // xor t0, t0, x0;
         os << "xor " << reg << ", " << lreg << ", " << rreg << endl;
 
@@ -299,52 +318,80 @@ void DumpRISC(const koopa_raw_binary_t &binary, string reg, ostream &os)
         break;
 
     case KOOPA_RBO_ADD:
-        os << "add " << reg << ", "<< lreg << ", " << rreg << endl;
+        // addi
+        if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER)
+            os << "addi " << reg << ", "<< lreg << ", " << binary.rhs->kind.data.integer.value << endl;
+
+        // add
+        else os << "add " << reg << ", "<< lreg << ", " << rreg << endl;
         break;
     
     case KOOPA_RBO_SUB:
+        if (rreg_li) Load_imm_dump(binary.rhs, os);
         os << "sub " << reg << ", "<< lreg << ", " << rreg << endl;
         break;
 
     case KOOPA_RBO_MUL:
+        if (rreg_li) Load_imm_dump(binary.rhs, os);
         os << "mul " << reg << ", "<< lreg << ", " << rreg << endl;
         break;
 
 
     case KOOPA_RBO_DIV: 
+        if (rreg_li) Load_imm_dump(binary.rhs, os);
         os << "div " << reg << ", "<< lreg << ", " << rreg << endl;
         break;
 
     case KOOPA_RBO_MOD:
+        if (rreg_li) Load_imm_dump(binary.rhs, os);
         os << "rem " << reg << ", "<< lreg << ", " << rreg << endl;
         break;
 
     case KOOPA_RBO_AND:
-        os << "and " << reg << ", "<< lreg << ", " << rreg << endl;
+        // andi
+        if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER)
+            os << "andi " << reg << ", "<< lreg << ", " << binary.rhs->kind.data.integer.value << endl;
+
+        // and
+        else os << "and " << reg << ", "<< lreg << ", " << rreg << endl;
         break;
     
     case KOOPA_RBO_OR:
-        os << "or " << reg << ", "<< lreg << ", " << rreg << endl;
+        // ori
+        if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER)
+            os << "ori " << reg << ", "<< lreg << ", " << binary.rhs->kind.data.integer.value << endl;
+
+        // or
+        else os << "or " << reg << ", "<< lreg << ", " << rreg << endl;
         break;
     
     case KOOPA_RBO_XOR:
-        os << "xor " << reg << ", "<< lreg << ", " << rreg << endl;
+        // xori
+        if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER)
+            os << "xori " << reg << ", "<< lreg << ", " << binary.rhs->kind.data.integer.value << endl;
+
+        // xor
+        else os << "xor " << reg << ", "<< lreg << ", " << rreg << endl;
         break;
 
     case KOOPA_RBO_GT:
+        if (rreg_li) Load_imm_dump(binary.rhs, os);
         os << "sgt " << reg << ", "<< lreg << ", " << rreg << endl;
         break;
     
     case KOOPA_RBO_LT:
+        if (rreg_li) Load_imm_dump(binary.rhs, os);
         os << "slt " << reg << ", "<< lreg << ", " << rreg << endl;
         break;
 
     case KOOPA_RBO_GE:
+        if (rreg_li) Load_imm_dump(binary.rhs, os);
         os << "slt " << reg << ", "<< lreg << ", " << rreg << endl;
         os << "seqz " << reg << ", " << reg << endl;
         break;
 
     case KOOPA_RBO_LE:
+        if (rreg_li) Load_imm_dump(binary.rhs, os);
         os << "sgt " << reg << ", "<< lreg << ", " << rreg << endl;
         os << "seqz " << reg << ", " << reg << endl;
         break;
