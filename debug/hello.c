@@ -24,8 +24,7 @@ main /*fejfefej*/
     /* eieuuierwuf  jhgerirtruuwiuet
     //ierruurug ruiu
     This a random comment. I want to use it to corret the wrong answers in this program. However, this seems inpossible. .*/
-    1+1+1*3-8/7 >=9
-
+    1+1*6-4/2
     /*nfejfnernnerf*/
     
 /*

@@ -58,6 +58,7 @@ public:
     virtual ~BaseAST() = default;
     virtual void DumpIR(ostream &os) const = 0; // 根据AST输出文本形式IR
     virtual void DistriReg(int lb){} // 分配寄存器，编号以lb为下界
+    virtual int Value(){} // 表达式求值
 };
 
 
@@ -139,8 +140,9 @@ public:
 
     void DumpIR(ostream &os) const override
     {
-        exp->DumpIR(os);
-        os << "ret " << exp->reg << endl;
+        os << "ret " << exp->Value() << endl;
+        // exp->DumpIR(os);
+        // os << "ret " << exp->reg << endl;
     }
 };
 
@@ -159,6 +161,11 @@ public:
     {
         loexp->DumpIR(os);
     }
+
+    int Value() override
+    {
+        return loexp->Value();
+    }
 };
 
 // PrimaryExp ::= "(" Exp ")"
@@ -175,6 +182,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         exp->DumpIR(os);
+    }
+
+    int Value() override
+    {
+        return exp->Value();
     }
 };
 
@@ -194,6 +206,10 @@ public:
     {
 
     }
+    int Value() override 
+    {
+        return num;
+    }
 };
 
 // UnaryExp ::= PrimaryExp
@@ -210,6 +226,10 @@ public:
     void DumpIR(ostream &os) const override
     {
         pexp->DumpIR(os);
+    }
+    int Value() override
+    {
+        return pexp->Value();
     }
 };
 
@@ -241,6 +261,16 @@ public:
 
         else return;
     }
+
+    int Value() override
+    {
+        assert(uop == "+" || uop == "-" || uop == "!");
+        if (uop == "+")
+            return uexp->Value();
+        else if (uop == "-")
+            return -uexp->Value();
+        else return (uexp->Value() == 0);
+    }
 };
 
 // MulExp ::= UnaryExp
@@ -258,6 +288,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         uexp->DumpIR(os);
+    }
+
+    int Value() override
+    {
+        return uexp->Value();
     }
 };
 
@@ -293,6 +328,20 @@ public:
         else // if (op == "%")
             os << reg << " = mod " << mexp->reg << ", " << uexp->reg << endl;
     }
+
+    int Value() override 
+    {
+        assert(op == "*" || op == "/" || op == "%");
+        
+        if (op == "*")
+            return mexp->Value() * uexp->Value();
+        
+        else if (op == "/")
+            return mexp->Value() / uexp->Value();
+
+        else // if (op == "%")
+            return mexp->Value() % uexp->Value();
+    }
 };
 
 // AddExp ::= MulExp
@@ -310,6 +359,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         mexp->DumpIR(os);
+    }
+
+    int Value() override
+    {
+        return mexp->Value();
     }
 };
 
@@ -341,6 +395,17 @@ public:
         else // if (op == "-")
             os << reg << " = sub " << aexp->reg << ", " << mexp->reg << endl;
     }
+
+    int Value() override
+    {
+        assert(op == "+" || op == "-");
+        
+        if (op == "+")
+            return aexp->Value() + mexp->Value();
+        
+        else // if (op == "-")
+            return aexp->Value() - mexp->Value();
+    }
 };
 
 // RelExp ::= AddExp
@@ -358,6 +423,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         aexp->DumpIR(os);
+    }
+
+    int Value() override 
+    {
+        return aexp->Value();
     }
 };
 
@@ -395,6 +465,23 @@ public:
         else // if (rel == ">=")
             os << reg << " = ge " << rexp->reg << ", " << aexp->reg << endl;
     }
+
+    int Value() override
+    {
+        assert(rel == "<" || rel == ">" || rel == "<=" || rel == ">=");
+        
+        if (rel == "<")
+            return (rexp->Value() < aexp->Value());
+        
+        else if (rel == ">")
+            return (rexp->Value() > aexp->Value());
+
+        else if (rel == "<=")
+            return (rexp->Value() <= aexp->Value());
+        
+        else // if (rel == ">=")
+            return (rexp->Value() >= aexp->Value());
+    }
 };
 
 // EqExp ::= RelExp
@@ -412,6 +499,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         rexp->DumpIR(os);
+    }
+
+    int Value() override
+    {
+        return rexp->Value();
     }
 };
 
@@ -461,6 +553,17 @@ public:
             os << reg << " = eq " << imm_reg << ", 0" << endl;
         }
     }
+
+    int Value() override 
+    {
+        assert(rel == "==" || rel == "!=");
+        
+        if (rel == "==")
+            return eexp->Value() == rexp->Value();
+        
+        else // (rel == "!=")
+            return eexp->Value() != rexp->Value();
+    }
 };
 
 // LAndExp ::= EqExp
@@ -478,6 +581,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         eexp->DumpIR(os);
+    }
+
+    int Value() override
+    {
+        return eexp->Value();
     }
 };
 
@@ -515,6 +623,11 @@ public:
         // 取反
         os << reg << " = eq " << imm_reg3 << ", 0" << endl;
     }
+
+    int Value() override
+    {
+        return laexp->Value() && eexp->Value();
+    }
 };
 
 // LOrExp ::= LAndExp
@@ -532,6 +645,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         laexp->DumpIR(os);
+    }
+
+    int Value() override
+    {
+        return laexp->Value();
     }
 };
 
@@ -563,5 +681,10 @@ public:
         os << imm_reg1 << " = or " << loexp->reg << ", " << laexp->reg << endl;
         os << imm_reg2 << " = eq " << imm_reg1 << ", 0" << endl;
         os << reg << " = eq " << imm_reg2 << ", 0" << endl;
+    }
+
+    int Value() override
+    {
+        return loexp->Value() || laexp->Value();
     }
 };
