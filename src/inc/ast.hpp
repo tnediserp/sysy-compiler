@@ -6,9 +6,12 @@
 #include <cassert>
 #include <vector>
 #include <map>
+#include <inc/ST.hpp>
 using namespace std;
 
-extern map<string, int> sym_table;
+extern map<string, ST_item> sym_table;
+extern bool eof;
+
 
 // 寄存器类
 class Register
@@ -16,16 +19,18 @@ class Register
 public:
     int num; // 寄存器编号
     int value; // 寄存器内容
-    bool real; // 寄存器是否真实存在？比如对于一个number,我们使用虚空寄存器来存它，此时该虚空寄存器不会占用一个寄存器编号
+    bool is_var; // 寄存器是否用于存一个变量，如果用于“存”了一个常量，认为该寄存器是虚空的
 
     // 寄存器深拷贝
+    /*
     Register& operator = (const Register &reg)
     {
         num = reg.num;
         value = reg.value;
-        real = reg.real; 
+        is_var = reg.is_var; 
         return *this;
     }
+    */
 
     /**
      * 输出寄存器
@@ -35,13 +40,14 @@ public:
      */
     friend ostream& operator << (ostream &os, const Register &reg)
     {
-        if (reg.real)
+        if (reg.is_var)
             os << "%" << reg.num;
         else os << reg.value;
         return os;
     }
 
     // 寄存器编号更新
+    /*
     Register operator + (const int x)
     {
         Register reg;
@@ -51,6 +57,7 @@ public:
             reg.real = true;
         return reg;
     }
+    */
 };
 
 // 所有 AST 的基类
@@ -63,7 +70,7 @@ public:
     virtual void DumpIR(ostream &os) const = 0; // 根据AST输出文本形式IR
     virtual void DistriReg(int lb){} // 分配寄存器，编号以lb为下界
     virtual int Value() const {return INT32_MAX;}  // 表达式求值
-    virtual void Semantic() const = 0; // 语义分析
+    virtual void Semantic() = 0; // 语义分析
 };
 
 
@@ -84,7 +91,7 @@ public:
         func_def->DumpIR(os);
     }
 
-    void Semantic() const override 
+    void Semantic() override 
     {
         func_def->Semantic();
     }
@@ -110,7 +117,7 @@ public:
         os << "}";
     }
 
-    void Semantic() const override 
+    void Semantic() override 
     {
         block->Semantic();
     }
@@ -122,7 +129,7 @@ public:
     string type;
 
     void DumpIR(ostream &os) const override {}
-    void Semantic() const override {}
+    void Semantic() override {}
 };
 
 // Block ::= "{" {BlockItem} "}";
@@ -131,7 +138,15 @@ class BlockAST : public BaseAST
 public:
     vector<unique_ptr<BaseAST>> block_item;
 
-    void DistriReg(int lb) override {}
+    void DistriReg(int lb) override 
+    {
+        for (int i = 0; i < block_item.size(); i++)
+        {
+            block_item[i]->DistriReg(lb);
+            lb = max(block_item[i]->reg.num, lb);
+        }
+        reg.num = lb + 1;
+    }
 
     void DumpIR(ostream &os) const override
     {
@@ -140,7 +155,7 @@ public:
             block_item[i]->DumpIR(os);
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         for (int i = 0; i < block_item.size(); i++)
             block_item[i]->Semantic();
@@ -153,10 +168,16 @@ class BlockItem2Decl_AST: public BaseAST
 public:
     unique_ptr<BaseAST> decl;
 
+    void DistriReg(int lb) override
+    {
+        decl->DistriReg(lb);
+        reg.num = decl->reg.num;
+    }
+
     void DumpIR(ostream &os) const override {
         decl->DumpIR(os);
     }
-    void Semantic() const override 
+    void Semantic() override 
     {
         decl->Semantic();
     }
@@ -167,16 +188,23 @@ class BlockItem2Stmt_AST: public BaseAST
 {
 public: 
     unique_ptr<BaseAST> stmt;
+
+    void DistriReg(int lb) override
+    {
+        stmt->DistriReg(lb);
+        reg.num = stmt->reg.num;
+    }
     void DumpIR(ostream &os) const override {
         stmt->DumpIR(os);
     }
-    void Semantic() const override
+    void Semantic() override
     {
         stmt->Semantic();
     }
 };
 
-class StmtAST : public BaseAST
+// Stmt ::= "return" Exp ";";
+class Stmt2Ret_AST : public BaseAST
 {
 public:
     // std::string return_;
@@ -186,17 +214,58 @@ public:
     void DistriReg(int lb) override 
     {
         exp->DistriReg(lb);
+        reg.num = exp->reg.num;
     }  
 
     void DumpIR(ostream &os) const override
     {
-        os << "ret " << exp->Value() << endl;
-        // exp->DumpIR(os);
-        // os << "ret " << exp->reg << endl;
+        exp->DumpIR(os);
+        os << "ret " << exp->reg << endl;
+        // eof = true; // 标志程序已经截止。
     }
-    void Semantic() const override 
+    void Semantic() override 
     {
         exp->Semantic();
+        reg.is_var = exp->reg.is_var;
+        reg.value = exp->reg.value;
+    }
+};
+
+// Stmt ::= LVal "=" Exp ";"
+class Stmt2Assign_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> lval;
+    string ident;
+    unique_ptr<BaseAST> exp;
+
+    void DistriReg(int lb) override 
+    {
+        lval->DistriReg(lb);
+        exp->DistriReg(lval->reg.num);
+        reg.num = exp->reg.num + 1;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        exp->DumpIR(os);
+
+        // string ident = ((LVal_AST *) (lval.get()))->ident;
+        os << "store " << exp->reg << ", @" << ident << endl;
+    }
+
+    void Semantic() override 
+    {
+        lval->Semantic();
+        exp->Semantic();
+
+        assert(lval->reg.is_var);
+        reg.is_var = true;
+        reg.value = exp->reg.value;
+
+        // string ident = ((LVal_AST *) (lval.get()))->ident;
+        sym_table[ident].is_var = true;
+        sym_table[ident].value = reg.value;
     }
 };
 
@@ -209,15 +278,18 @@ public:
     void DistriReg(int lb) override
     {
         loexp->DistriReg(lb);
-        reg = loexp->reg;
+        reg.num = loexp->reg.num;
     }
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         loexp->DumpIR(os);
     }
-    void Semantic() const override
+    void Semantic() override
     {
         loexp->Semantic();
+        reg.is_var = loexp->reg.is_var;
+        reg.value = loexp->reg.value;
     }
 
     int Value() const override
@@ -235,16 +307,19 @@ public:
     void DistriReg(int lb) override
     {
         exp->DistriReg(lb);
-        reg = exp->reg;
+        reg.num = exp->reg.num;
     }
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         exp->DumpIR(os);
     }
 
-    void Semantic() const override 
+    void Semantic() override 
     {
         exp->Semantic();
+        reg.is_var = exp->reg.is_var;
+        reg.value = exp->reg.value;
     }
 
     int Value() const override
@@ -261,16 +336,15 @@ public:
 
     void DistriReg(int lb) override
     {
-        reg.value = num;
-        reg.real = false;
         reg.num = lb;
     }
-    void DumpIR(ostream &os) const override
+    void DumpIR(ostream &os) const override {}
+
+    void Semantic() override 
     {
-
+        reg.is_var = false;
+        reg.value = num;
     }
-
-    void Semantic() const override {}
 
     int Value() const override 
     {
@@ -284,10 +358,22 @@ class PExp2Lval_AST: public BaseAST
 public: 
     unique_ptr<BaseAST> lval;
 
-    void DumpIR(ostream &os) const override {}
-    void Semantic() const override
+    void DistriReg(int lb) override 
+    {
+        lval->DistriReg(lb);
+        reg.num = lval->reg.num;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        if (!reg.is_var) return;
+        lval->DumpIR(os);
+    }
+    void Semantic() override
     {
         lval->Semantic();
+        reg.is_var = lval->reg.is_var;
+        reg.value = lval->reg.value;
     }
     int Value() const override 
     {
@@ -304,15 +390,18 @@ public:
     void DistriReg(int lb) override
     {
         pexp->DistriReg(lb);
-        reg = pexp->reg;
+        reg.num = pexp->reg.num;
     }
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         pexp->DumpIR(os);
     }
-    void Semantic() const override
+    void Semantic() override
     {
         pexp->Semantic();
+        reg.is_var = pexp->reg.is_var;
+        reg.value = pexp->reg.value;
     }
     int Value() const override
     {
@@ -334,12 +423,14 @@ public:
         assert(uop == "+" || uop == "-" || uop == "!");
 
         if (uop != "+")
-            reg = uexp->reg + 1;
-        else reg = uexp->reg;
+            reg.num = uexp->reg.num + 1;
+        else reg.num = uexp->reg.num;
     }
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         uexp->DumpIR(os);
+        
         if (uop == "-")
             os << reg << " = sub 0, " << uexp->reg << endl;
 
@@ -349,9 +440,17 @@ public:
         else return;
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         uexp->Semantic();
+
+        assert(uop == "+" || uop == "-" || uop == "!");
+        reg.is_var = uexp->reg.is_var;
+        if (uop == "+")
+            reg.value = uexp->reg.value;
+        else if (uop == "-")
+            reg.value = -uexp->reg.value;
+        else reg.value = (uexp->reg.value == 0);
     }
     int Value() const override
     {
@@ -373,16 +472,19 @@ public:
     void DistriReg(int lb) override 
     {
         uexp->DistriReg(lb);
-        reg = uexp->reg;
+        reg.num = uexp->reg.num;
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         uexp->DumpIR(os);
     }
-    void Semantic() const override 
+    void Semantic() override 
     {
         uexp->Semantic();
+        reg.is_var = uexp->reg.is_var;
+        reg.value = uexp->reg.value;
     }
 
     int Value() const override
@@ -404,11 +506,12 @@ public:
         mexp->DistriReg(lb);
         uexp->DistriReg(mexp->reg.num);
         
-        reg = uexp->reg + 1;
+        reg.num = uexp->reg.num + 1;
     }
 
     void DumpIR(ostream &os) const override
-    {   
+    {
+        if (!reg.is_var) return;
         mexp->DumpIR(os);
         uexp->DumpIR(os);
 
@@ -424,10 +527,22 @@ public:
             os << reg << " = mod " << mexp->reg << ", " << uexp->reg << endl;
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         mexp->Semantic();
         uexp->Semantic();
+
+        reg.is_var = mexp->reg.is_var || uexp->reg.is_var;
+        assert(op == "*" || op == "/" || op == "%");
+        
+        if (op == "*")
+            reg.value = mexp->reg.value * uexp->reg.value;
+        
+        else if (op == "/")
+            reg.value = mexp->reg.value / uexp->reg.value;
+
+        else // if (op == "%")
+            reg.value = mexp->reg.value % uexp->reg.value;
     }
 
     int Value() const override 
@@ -454,17 +569,20 @@ public:
     void DistriReg(int lb) override 
     {
         mexp->DistriReg(lb);
-        reg = mexp->reg;
+        reg.num = mexp->reg.num;
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         mexp->DumpIR(os);
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         mexp->Semantic();
+        reg.is_var = mexp->reg.is_var;
+        reg.value = mexp->reg.value;
     }
     int Value() const override
     {
@@ -484,11 +602,12 @@ public:
     {
         aexp->DistriReg(lb);
         mexp->DistriReg(aexp->reg.num);
-        reg = mexp->reg + 1;
+        reg.num = mexp->reg.num + 1;
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         aexp->DumpIR(os);
         mexp->DumpIR(os);
 
@@ -501,10 +620,19 @@ public:
             os << reg << " = sub " << aexp->reg << ", " << mexp->reg << endl;
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         aexp->Semantic();
         mexp->Semantic();
+
+        reg.is_var = aexp->reg.is_var || mexp->reg.is_var;
+        assert(op == "+" || op == "-");
+        
+        if (op == "+")
+            reg.value = aexp->reg.value + mexp->reg.value;
+
+        else // if (op == "-")
+            reg.value = aexp->reg.value - mexp->reg.value;
     }
 
     int Value() const override
@@ -528,17 +656,20 @@ public:
     void DistriReg(int lb) override 
     {
         aexp->DistriReg(lb);
-        reg = aexp->reg;
+        reg.num = aexp->reg.num;
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         aexp->DumpIR(os);
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         aexp->Semantic();
+        reg.is_var = aexp->reg.is_var;
+        reg.value = aexp->reg.value;
     }
 
     int Value() const override 
@@ -559,11 +690,12 @@ public:
     {
         rexp->DistriReg(lb);
         aexp->DistriReg(rexp->reg.num);
-        reg = aexp->reg + 1;
+        reg.num = aexp->reg.num + 1;
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         rexp->DumpIR(os);
         aexp->DumpIR(os);
 
@@ -582,10 +714,25 @@ public:
             os << reg << " = ge " << rexp->reg << ", " << aexp->reg << endl;
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         rexp->Semantic();
         aexp->Semantic();
+
+        reg.is_var = rexp->reg.is_var || rexp->reg.is_var;
+        assert(rel == "<" || rel == ">" || rel == "<=" || rel == ">=");
+        
+        if (rel == "<")
+            reg.value = (rexp->reg.value < aexp->reg.value);
+        
+        else if (rel == ">")
+            reg.value = (rexp->reg.value > aexp->reg.value);
+
+        else if (rel == "<=")
+            reg.value = (rexp->reg.value <= aexp->reg.value);
+        
+        else // if (rel == ">=")
+            reg.value = (rexp->reg.value >= aexp->reg.value);
     }
 
     int Value() const override
@@ -615,17 +762,20 @@ public:
     void DistriReg(int lb) override 
     {
         rexp->DistriReg(lb);
-        reg = rexp->reg;
+        reg.num = rexp->reg.num;
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         rexp->DumpIR(os);
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         rexp->Semantic();
+        reg.is_var = rexp->reg.is_var;
+        reg.value = rexp->reg.value;
     }
 
     int Value() const override
@@ -653,18 +803,19 @@ public:
         // 需要使用imm_reg保存中间结果
         if (rel == "!=")
         {
-            imm_reg = rexp->reg + 1;
-            reg = rexp->reg + 2;
+            imm_reg.num = rexp->reg.num + 1; imm_reg.is_var = true;
+            reg.num = rexp->reg.num + 2;
         }
         else 
         {
-            imm_reg = rexp->reg + 1;
-            reg = rexp->reg + 1;
+            imm_reg.num = rexp->reg.num + 1; imm_reg.is_var = true;
+            reg.num = rexp->reg.num + 1;
         }
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         eexp->DumpIR(os);
         rexp->DumpIR(os);
 
@@ -681,10 +832,19 @@ public:
         }
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         eexp->Semantic();
         rexp->Semantic();
+
+        reg.is_var = eexp->reg.is_var || rexp->reg.is_var;
+        assert(rel == "==" || rel == "!=");
+        
+        if (rel == "==")
+            reg.value = (eexp->reg.value == rexp->reg.value);
+        
+        else // (rel == "!=")
+            reg.value = (eexp->reg.value != rexp->reg.value);
     }
 
     int Value() const override 
@@ -708,17 +868,20 @@ public:
     void DistriReg(int lb) override 
     {
         eexp->DistriReg(lb);
-        reg = eexp->reg;
+        reg.num = eexp->reg.num;
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         eexp->DumpIR(os);
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         eexp->Semantic();
+        reg.is_var = eexp->reg.is_var;
+        reg.value = eexp->reg.value;
     }
 
     int Value() const override
@@ -741,14 +904,15 @@ public:
         eexp->DistriReg(laexp->reg.num);
 
         // 需要使用imm_reg保存中间结果
-        imm_reg1 = eexp->reg + 1;
-        imm_reg2 = eexp->reg + 2;
-        imm_reg3 = eexp->reg + 3;
-        reg = eexp->reg + 4;
+        imm_reg1.num = eexp->reg.num + 1; imm_reg1.is_var = true;
+        imm_reg2.num = eexp->reg.num + 2; imm_reg2.is_var = true;
+        imm_reg3.num = eexp->reg.num + 3; imm_reg3.is_var = true;
+        reg.num = eexp->reg.num + 4;
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         laexp->DumpIR(os);
         eexp->DumpIR(os);
 
@@ -762,10 +926,13 @@ public:
         os << reg << " = eq " << imm_reg3 << ", 0" << endl;
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         laexp->Semantic();
         eexp->Semantic();
+
+        reg.is_var = laexp->reg.is_var || eexp->reg.is_var;
+        reg.value = laexp->reg.value && eexp->reg.value;
     }
 
     int Value() const override
@@ -783,17 +950,20 @@ public:
     void DistriReg(int lb) override 
     {
         laexp->DistriReg(lb);
-        reg = laexp->reg;
+        reg.num = laexp->reg.num;
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         laexp->DumpIR(os);
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         laexp->Semantic();
+        reg.is_var = laexp->reg.is_var;
+        reg.value = laexp->reg.value;
     }
 
     int Value() const override
@@ -816,13 +986,14 @@ public:
         laexp->DistriReg(loexp->reg.num);
 
         // 需要使用imm_reg保存中间结果
-        imm_reg1 = laexp->reg + 1;
-        imm_reg2 = laexp->reg + 2;
-        reg = laexp->reg + 3;
+        imm_reg1.num = laexp->reg.num + 1; imm_reg1.is_var = true;
+        imm_reg2.num = laexp->reg.num + 2; imm_reg2.is_var = true;
+        reg.num = laexp->reg.num + 3;
     }
 
     void DumpIR(ostream &os) const override
     {
+        if (!reg.is_var) return;
         loexp->DumpIR(os);
         laexp->DumpIR(os);
 
@@ -832,10 +1003,13 @@ public:
         os << reg << " = eq " << imm_reg2 << ", 0" << endl;
     }
 
-    void Semantic() const override
+    void Semantic() override
     {
         loexp->Semantic();
         laexp->Semantic();
+
+        reg.is_var = loexp->reg.is_var || laexp->reg.is_var;
+        reg.value = loexp->reg.value || laexp->reg.value;
     }
 
     int Value() const override
@@ -845,16 +1019,45 @@ public:
 };
 
 // Decl ::= ConstDecl;
-class Decl_AST: public BaseAST 
+class Decl2Const_AST: public BaseAST 
 {
 public: 
     unique_ptr<BaseAST> constdecl;
 
-    void DumpIR(ostream &os) const override {}
+    void DistriReg(int lb) override 
+    {
+        constdecl->DistriReg(lb);
+        reg.num = lb;
+    }
 
-    void Semantic() const override
+    void DumpIR(ostream &os) const override { /* do nothing. */ }
+
+    void Semantic() override
     {
         constdecl->Semantic();
+    }
+};
+
+// Decl ::= VarDecl
+class Decl2Var_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> var_decl;
+
+    void DistriReg(int lb) override
+    {
+        var_decl->DistriReg(lb);
+        reg.num = var_decl->reg.num + 1;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        var_decl->DumpIR(os);
+    }
+
+    void Semantic() override 
+    {
+        var_decl->Semantic();
     }
 };
 
@@ -865,11 +1068,48 @@ public:
     string btype;
     vector<unique_ptr<BaseAST>> constdefs;
 
-    void DumpIR(ostream &os) const override {}
-    void Semantic() const override 
+    void DistriReg(int lb) override
+    {
+        for (int i = 0; i < constdefs.size(); i++)
+            constdefs[i]->DistriReg(lb);
+        reg.num = lb + 1;
+    }
+
+    void DumpIR(ostream &os) const override { /* do nothing. */ }
+    void Semantic() override 
     {
         for (int i = 0; i < constdefs.size(); i++)
             constdefs[i]->Semantic();
+    }
+};
+
+// VarDecl ::= BType VarDef {"," VarDef} ";"
+class VarDecl_AST: public BaseAST 
+{
+public:
+    string btype;
+    vector<unique_ptr<BaseAST>> vardefs;
+
+    void DistriReg(int lb) override 
+    {
+        for (int i = 0; i < vardefs.size(); i++)
+        {
+            vardefs[i]->DistriReg(lb);
+            lb = max(vardefs[i]->reg.num, lb);
+        }
+        reg.num = lb + 1;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        for (int i = 0; i < vardefs.size(); i++)
+            vardefs[i]->DumpIR(os);
+    }
+
+    void Semantic() override 
+    {
+        for (int i = 0; i < vardefs.size(); i++)
+            vardefs[i]->Semantic();
     }
 };
 
@@ -880,11 +1120,81 @@ public:
     string ident;
     unique_ptr<BaseAST> constinitval;
 
-    void DumpIR(ostream &os) const override {}
-    void Semantic() const override
+    void DistriReg(int lb) override 
+    {
+        constinitval->DistriReg(lb);
+        reg.num = lb;
+    }
+
+    void DumpIR(ostream &os) const override { /* do nothing. */ }
+    void Semantic() override
     {
         constinitval->Semantic();
-        sym_table[ident] = constinitval->Value();
+
+        assert(!constinitval->reg.is_var);
+        sym_table[ident].is_var = false;
+        sym_table[ident].value = constinitval->reg.value;
+
+        reg.is_var = false;
+        reg.value = constinitval->reg.value;
+    }
+};
+
+// VarDef ::= IDENT "=" InitVal
+class VarDef_init_AST: public BaseAST
+{
+public: 
+    string ident;
+    unique_ptr<BaseAST> initval;
+
+    void DistriReg(int lb) override
+    {
+        initval->DistriReg(lb);
+        reg.num = initval->reg.num;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        initval->DumpIR(os);
+        os << "@" << ident <<  " = alloc i32" << endl;
+        os << "store " << initval->reg << ", @" << ident << endl;
+    }
+
+    void Semantic() override
+    {
+        initval->Semantic();
+        sym_table[ident].is_var = true;
+        sym_table[ident].value = initval->reg.value;
+
+        reg.is_var = true;
+        reg.value = initval->reg.value;
+    }
+
+};
+
+// VarDef ::= IDENT
+class VarDef_noninit_AST: public BaseAST
+{
+public: 
+    string ident;
+    
+    void DistriReg(int lb) override 
+    {
+        reg.num = lb + 1;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        os << "@" << ident <<  " = alloc i32" << endl;
+    }
+
+    void Semantic() override
+    {
+        sym_table[ident].is_var = true;
+        sym_table[ident].value = 0;
+
+        reg.is_var = true;
+        reg.value = 0;
     }
 };
 
@@ -894,14 +1204,49 @@ class ConstInitVal_AST: public BaseAST
 public: 
     unique_ptr<BaseAST> const_exp;
 
-    void DumpIR(ostream &os) const override {}
-    void Semantic() const override 
+    void DistriReg(int lb) override
+    {
+        const_exp->DistriReg(lb);
+        reg.num = lb;
+    }
+
+    void DumpIR(ostream &os) const override {/* do nothing. */}
+    void Semantic() override 
     {
         const_exp->Semantic();
+
+        assert(!const_exp->reg.is_var);
+        reg.is_var = false;
+        reg.value = const_exp->reg.value;
     }
     int Value() const override
     {
         return const_exp->Value();
+    }
+};
+
+// InitVal ::= Exp;
+class InitVal_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> exp;
+
+    void DistriReg(int lb) override 
+    {
+        exp->DistriReg(lb);
+        reg.num = exp->reg.num;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        exp->DumpIR(os);
+    }
+
+    void Semantic() override 
+    {
+        exp->Semantic();
+        reg.is_var = exp->reg.is_var;
+        reg.value = exp->reg.value;
     }
 };
 
@@ -911,15 +1256,28 @@ class LVal_AST: public BaseAST
 public: 
     string ident;
 
-    void DumpIR(ostream &os) const override {}
-    void Semantic() const override
+    void DistriReg(int lb) override
+    {
+        reg.num = lb + 1;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        if (!reg.is_var) return;
+
+        // variable: dump here
+        os << reg << " = load @" << ident << endl;
+    }
+    void Semantic() override
     {
         assert(sym_table.find(ident) != sym_table.end());
+        reg.is_var = sym_table[ident].is_var;
+        reg.value = sym_table[ident].value;
     }
     int Value() const override 
     {
         assert(sym_table.find(ident) != sym_table.end());
-        return sym_table[ident];
+        return sym_table[ident].value;
     }
 };
 
@@ -929,10 +1287,19 @@ class ConstExp_AST: public BaseAST
 public:
     unique_ptr<BaseAST> exp;
 
-    void DumpIR(ostream &os) const override {}
-    void Semantic() const override 
+    void DistriReg(int lb) override
+    {
+        exp->DistriReg(lb);
+        reg.num = lb;
+    }
+
+    void DumpIR(ostream &os) const override {/* do nothing. */}
+    void Semantic() override 
     {
         exp->Semantic();
+        assert(!exp->reg.is_var);
+        reg.is_var = false;
+        reg.value = exp->reg.value;
     }
 
     int Value() const override

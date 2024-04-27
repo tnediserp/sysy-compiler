@@ -19,17 +19,23 @@ main /*fejfefej*/
     
     
     */
-   const int x =1*6+32, y=6/3*4, z=9+3-6;
-   const int x = 9;
-   const int z = 45;
+   
+   const int x =2238, y=6/3*4, z=9+3-6;
+   int p= x+ 2-8/4+2, r=123;
+   int q = (p*r == r/p)-3*p/r+7 && (p!=r%3);
+   // const int x = 9;
+   // const int z = 45;
    const int w=746;
-   const int q = 399;
+   // const int q = 399;
+   // return 23020;
+   const int h=98;
+   p=p+q;
     return//kfkrfrk
     /*rjfrjjfrjf fjerif*/ 
     /* eieuuierwuf  jhgerirtruuwiuet
     //ierruurug ruiu
     This a random comment. I want to use it to corret the wrong answers in this program. However, this seems inpossible. .*/
-    w-q
+    p+7
     /*nfejfnernnerf*/
     
 /*

@@ -54,7 +54,7 @@ using namespace std;
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp Decl ConstDecl ConstDef ConstInitVal BlockItem LVal ConstExp ConstDefList ConstDefAppend BlockList
+%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp Decl ConstDecl ConstDef ConstInitVal BlockItem LVal ConstExp ConstDefList ConstDefAppend BlockList VarDecl VarDef VarDefList VarDefAppend InitVal
 %type <int_val> Number
 %type <str_val> UnaryOp BType 
 
@@ -151,9 +151,16 @@ BlockItem
 
 Stmt
   : RETURN Exp ';' {
-    auto ast = new StmtAST();
+    auto ast = new Stmt2Ret_AST();
     ast->exp = unique_ptr<BaseAST>($2);
     $$ = ast;
+  }
+  | LVal '=' Exp ';' {
+      auto ast = new Stmt2Assign_AST();
+      ast->lval = unique_ptr<BaseAST>($1);
+      ast->ident = ((LVal_AST *) $1)->ident;
+      ast->exp = unique_ptr<BaseAST>($3);
+      $$ = ast;
   }
   ;
 
@@ -326,10 +333,15 @@ LOrExp
 
 Decl
   : ConstDecl {
-    auto ast = new Decl_AST();
+    auto ast = new Decl2Const_AST();
     ast->constdecl = unique_ptr<BaseAST>($1);
     $$ = ast;
-  };
+  }
+  | VarDecl {
+    auto ast = new Decl2Var_AST();
+    ast->var_decl = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
 
 ConstDecl 
   : CONST BType ConstDefList ';' {
@@ -381,6 +393,56 @@ ConstDefAppend
     $$ = ast;
   };
 
+VarDecl 
+  : BType VarDefList ';' {
+    auto ast = new VarDecl_AST();
+    ast->btype = *unique_ptr<string>($1);
+    
+    unique_ptr<VarDecl_AST> def_list = unique_ptr<VarDecl_AST>((VarDecl_AST *) $2);
+    ast->vardefs.clear();
+    
+  
+    for (int i = 0; i < def_list->vardefs.size(); i++)
+      ast->vardefs.push_back(move(def_list->vardefs[i]));
+    
+    $$ = ast;
+  };
+
+VarDefList
+  : VarDefAppend VarDef {
+    auto ast = new VarDecl_AST();
+    unique_ptr<VarDecl_AST> def_app = unique_ptr<VarDecl_AST>((VarDecl_AST *) $1);
+    
+    ast->vardefs.clear();
+    
+    for (int i = 0; i < def_app->vardefs.size(); i++)
+      ast->vardefs.push_back(move(def_app->vardefs[i]));
+      
+    ast->vardefs.push_back(unique_ptr<BaseAST>($2));
+    
+    $$ = ast;
+  };
+
+VarDefAppend 
+  : {
+    auto ast = new VarDecl_AST();
+    ast->vardefs.clear();
+    $$ = ast;
+  }
+  | VarDefAppend VarDef ',' {
+    auto ast = new VarDecl_AST();
+    unique_ptr<VarDecl_AST> def_app = unique_ptr<VarDecl_AST>((VarDecl_AST *) $1);
+    
+    ast->vardefs.clear();
+    
+    for (int i = 0; i < def_app->vardefs.size(); i++)
+      ast->vardefs.push_back(move(def_app->vardefs[i]));
+      
+    ast->vardefs.push_back(unique_ptr<BaseAST>($2));
+    
+    $$ = ast;
+  };
+
 BType
   : INT {
     auto ast = new string("int");
@@ -395,12 +457,32 @@ ConstDef
     $$ = ast;
   };
 
+VarDef
+  : IDENT {
+    auto ast = new VarDef_noninit_AST();
+    ast->ident = *unique_ptr<string>($1);
+    $$ = ast;
+  }
+  | IDENT '=' InitVal {
+    auto ast = new VarDef_init_AST();
+    ast->ident = *unique_ptr<string>($1);
+    ast->initval = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+
 ConstInitVal 
   : ConstExp {
     auto ast = new ConstInitVal_AST();
     ast->const_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   };
+
+InitVal
+  : Exp {
+    auto ast = new InitVal_AST();
+    ast->exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
 
 LVal 
   : IDENT {

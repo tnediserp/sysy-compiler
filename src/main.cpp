@@ -23,6 +23,7 @@ using namespace std;
 extern FILE *yyin;
 extern int yyparse(unique_ptr<BaseAST> &ast);
 extern map<koopa_raw_value_t, string> registers;
+bool eof = false;
 
 
 int main(int argc, const char *argv[]) {
@@ -43,9 +44,9 @@ int main(int argc, const char *argv[]) {
     auto ret = yyparse(ast);
     assert(!ret);
 
-    ast->DistriReg(0);
     ast->Semantic();
-
+    ast->DistriReg(0);
+    
     // 使用临时文件tmp保存文本形式IR
     ofstream tmp;
     tmp.open("tmp.koopa");
