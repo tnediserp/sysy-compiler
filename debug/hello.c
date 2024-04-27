@@ -30,6 +30,10 @@ main /*fejfefej*/
    // return 23020;
    const int h=98;
    p=p+q;
+   return 3;
+   
+   const int pi = 5;
+
     return//kfkrfrk
     /*rjfrjjfrjf fjerif*/ 
     /* eieuuierwuf  jhgerirtruuwiuet

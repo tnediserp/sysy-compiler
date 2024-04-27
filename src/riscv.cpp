@@ -2,7 +2,6 @@
 #include <inc/ST.hpp>
 
 map<koopa_raw_value_t, string> registers;
-map<string, ST_item> sym_table; // 符号表
 
 // 将文本形式IR转换为内存形式
 koopa_raw_program_t str2raw(const char *str)

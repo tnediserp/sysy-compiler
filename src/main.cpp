@@ -23,7 +23,9 @@ using namespace std;
 extern FILE *yyin;
 extern int yyparse(unique_ptr<BaseAST> &ast);
 extern map<koopa_raw_value_t, string> registers;
-bool eof = false;
+
+map<string, ST_item> sym_table; // 符号表
+bool eof = false; // 是否遇到return
 
 
 int main(int argc, const char *argv[]) {
@@ -46,12 +48,6 @@ int main(int argc, const char *argv[]) {
 
     ast->Semantic();
     ast->DistriReg(0);
-    
-    // 使用临时文件tmp保存文本形式IR
-    ofstream tmp;
-    tmp.open("tmp.koopa");
-    ast->DumpIR(tmp);
-    tmp.close();
 
     // 根据mode决定生成何种形式文件
     // koopa IR
@@ -66,6 +62,12 @@ int main(int argc, const char *argv[]) {
     // 目标代码
     else if (!strcmp(mode, "-riscv"))
     {
+        // 使用临时文件tmp保存文本形式IR
+        ofstream tmp;
+        tmp.open("tmp.koopa");
+        ast->DumpIR(tmp);
+        tmp.close();
+        
         // 从临时文件中读出文本形式IR，存入raw
         FILE *fp = fopen("tmp.koopa", "r");
         char *str = new char [FILE_LEN];

@@ -151,7 +151,7 @@ public:
     void DumpIR(ostream &os) const override
     {
         os << "%" << "entry" << ":" << endl;
-        for (int i = 0; i < block_item.size(); i++)
+        for (int i = 0; i < block_item.size() && !eof; i++)
             block_item[i]->DumpIR(os);
     }
 
@@ -221,7 +221,7 @@ public:
     {
         exp->DumpIR(os);
         os << "ret " << exp->reg << endl;
-        // eof = true; // 标志程序已经截止。
+        eof = true; // 标志程序已经截止。
     }
     void Semantic() override 
     {
