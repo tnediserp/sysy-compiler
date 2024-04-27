@@ -4,7 +4,11 @@
 #include <iostream>
 #include <inc/koopa_ir.hpp>
 #include <cassert>
+#include <vector>
+#include <map>
 using namespace std;
+
+extern map<string, int> sym_table;
 
 // 寄存器类
 class Register
@@ -58,7 +62,8 @@ public:
     virtual ~BaseAST() = default;
     virtual void DumpIR(ostream &os) const = 0; // 根据AST输出文本形式IR
     virtual void DistriReg(int lb){} // 分配寄存器，编号以lb为下界
-    virtual int Value() const{return 0;}  // 表达式求值
+    virtual int Value() const {return INT32_MAX;}  // 表达式求值
+    virtual void Semantic() const = 0; // 语义分析
 };
 
 
@@ -77,6 +82,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         func_def->DumpIR(os);
+    }
+
+    void Semantic() const override 
+    {
+        func_def->Semantic();
     }
 };
 
@@ -99,6 +109,11 @@ public:
         block->DumpIR(os);
         os << "}";
     }
+
+    void Semantic() const override 
+    {
+        block->Semantic();
+    }
 };
 
 class FuncTypeAST : public BaseAST
@@ -107,22 +122,57 @@ public:
     string type;
 
     void DumpIR(ostream &os) const override {}
+    void Semantic() const override {}
 };
 
+// Block ::= "{" {BlockItem} "}";
 class BlockAST : public BaseAST
 {
 public:
-    unique_ptr<BaseAST> stmt;
+    vector<unique_ptr<BaseAST>> block_item;
 
-    void DistriReg(int lb) override
-    {
-        stmt->DistriReg(lb);
-    }
+    void DistriReg(int lb) override {}
 
     void DumpIR(ostream &os) const override
     {
         os << "%" << "entry" << ":" << endl;
+        for (int i = 0; i < block_item.size(); i++)
+            block_item[i]->DumpIR(os);
+    }
+
+    void Semantic() const override
+    {
+        for (int i = 0; i < block_item.size(); i++)
+            block_item[i]->Semantic();
+    }
+};
+
+// BlockItem ::= Decl;
+class BlockItem2Decl_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> decl;
+
+    void DumpIR(ostream &os) const override {
+        decl->DumpIR(os);
+    }
+    void Semantic() const override 
+    {
+        decl->Semantic();
+    }
+};
+
+// BlockItem ::= Stmt;
+class BlockItem2Stmt_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> stmt;
+    void DumpIR(ostream &os) const override {
         stmt->DumpIR(os);
+    }
+    void Semantic() const override
+    {
+        stmt->Semantic();
     }
 };
 
@@ -144,6 +194,10 @@ public:
         // exp->DumpIR(os);
         // os << "ret " << exp->reg << endl;
     }
+    void Semantic() const override 
+    {
+        exp->Semantic();
+    }
 };
 
 // Exp ::= LOrExp
@@ -160,6 +214,10 @@ public:
     void DumpIR(ostream &os) const override
     {
         loexp->DumpIR(os);
+    }
+    void Semantic() const override
+    {
+        loexp->Semantic();
     }
 
     int Value() const override
@@ -184,6 +242,11 @@ public:
         exp->DumpIR(os);
     }
 
+    void Semantic() const override 
+    {
+        exp->Semantic();
+    }
+
     int Value() const override
     {
         return exp->Value();
@@ -206,9 +269,29 @@ public:
     {
 
     }
+
+    void Semantic() const override {}
+
     int Value() const override 
     {
         return num;
+    }
+};
+
+// PrimaryExp ::= LVal 
+class PExp2Lval_AST: public BaseAST 
+{
+public: 
+    unique_ptr<BaseAST> lval;
+
+    void DumpIR(ostream &os) const override {}
+    void Semantic() const override
+    {
+        lval->Semantic();
+    }
+    int Value() const override 
+    {
+        return lval->Value();
     }
 };
 
@@ -226,6 +309,10 @@ public:
     void DumpIR(ostream &os) const override
     {
         pexp->DumpIR(os);
+    }
+    void Semantic() const override
+    {
+        pexp->Semantic();
     }
     int Value() const override
     {
@@ -262,6 +349,10 @@ public:
         else return;
     }
 
+    void Semantic() const override
+    {
+        uexp->Semantic();
+    }
     int Value() const override
     {
         assert(uop == "+" || uop == "-" || uop == "!");
@@ -288,6 +379,10 @@ public:
     void DumpIR(ostream &os) const override
     {
         uexp->DumpIR(os);
+    }
+    void Semantic() const override 
+    {
+        uexp->Semantic();
     }
 
     int Value() const override
@@ -329,6 +424,12 @@ public:
             os << reg << " = mod " << mexp->reg << ", " << uexp->reg << endl;
     }
 
+    void Semantic() const override
+    {
+        mexp->Semantic();
+        uexp->Semantic();
+    }
+
     int Value() const override 
     {
         assert(op == "*" || op == "/" || op == "%");
@@ -361,6 +462,10 @@ public:
         mexp->DumpIR(os);
     }
 
+    void Semantic() const override
+    {
+        mexp->Semantic();
+    }
     int Value() const override
     {
         return mexp->Value();
@@ -396,6 +501,12 @@ public:
             os << reg << " = sub " << aexp->reg << ", " << mexp->reg << endl;
     }
 
+    void Semantic() const override
+    {
+        aexp->Semantic();
+        mexp->Semantic();
+    }
+
     int Value() const override
     {
         assert(op == "+" || op == "-");
@@ -423,6 +534,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         aexp->DumpIR(os);
+    }
+
+    void Semantic() const override
+    {
+        aexp->Semantic();
     }
 
     int Value() const override 
@@ -466,6 +582,12 @@ public:
             os << reg << " = ge " << rexp->reg << ", " << aexp->reg << endl;
     }
 
+    void Semantic() const override
+    {
+        rexp->Semantic();
+        aexp->Semantic();
+    }
+
     int Value() const override
     {
         assert(rel == "<" || rel == ">" || rel == "<=" || rel == ">=");
@@ -499,6 +621,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         rexp->DumpIR(os);
+    }
+
+    void Semantic() const override
+    {
+        rexp->Semantic();
     }
 
     int Value() const override
@@ -554,6 +681,12 @@ public:
         }
     }
 
+    void Semantic() const override
+    {
+        eexp->Semantic();
+        rexp->Semantic();
+    }
+
     int Value() const override 
     {
         assert(rel == "==" || rel == "!=");
@@ -581,6 +714,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         eexp->DumpIR(os);
+    }
+
+    void Semantic() const override
+    {
+        eexp->Semantic();
     }
 
     int Value() const override
@@ -624,6 +762,12 @@ public:
         os << reg << " = eq " << imm_reg3 << ", 0" << endl;
     }
 
+    void Semantic() const override
+    {
+        laexp->Semantic();
+        eexp->Semantic();
+    }
+
     int Value() const override
     {
         return laexp->Value() && eexp->Value();
@@ -645,6 +789,11 @@ public:
     void DumpIR(ostream &os) const override
     {
         laexp->DumpIR(os);
+    }
+
+    void Semantic() const override
+    {
+        laexp->Semantic();
     }
 
     int Value() const override
@@ -683,8 +832,111 @@ public:
         os << reg << " = eq " << imm_reg2 << ", 0" << endl;
     }
 
+    void Semantic() const override
+    {
+        loexp->Semantic();
+        laexp->Semantic();
+    }
+
     int Value() const override
     {
         return loexp->Value() || laexp->Value();
+    }
+};
+
+// Decl ::= ConstDecl;
+class Decl_AST: public BaseAST 
+{
+public: 
+    unique_ptr<BaseAST> constdecl;
+
+    void DumpIR(ostream &os) const override {}
+
+    void Semantic() const override
+    {
+        constdecl->Semantic();
+    }
+};
+
+// ConstDecl ::= "const" BType ConstDef {"," ConstDef} ";";
+class ConstDecl_AST: public BaseAST
+{
+public: 
+    string btype;
+    vector<unique_ptr<BaseAST>> constdefs;
+
+    void DumpIR(ostream &os) const override {}
+    void Semantic() const override 
+    {
+        for (int i = 0; i < constdefs.size(); i++)
+            constdefs[i]->Semantic();
+    }
+};
+
+// ConstDef ::= IDENT "=" ConstInitVal;
+class ConstDef_AST: public BaseAST 
+{
+public: 
+    string ident;
+    unique_ptr<BaseAST> constinitval;
+
+    void DumpIR(ostream &os) const override {}
+    void Semantic() const override
+    {
+        constinitval->Semantic();
+        sym_table[ident] = constinitval->Value();
+    }
+};
+
+// ConstInitVal ::= ConstExp;
+class ConstInitVal_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> const_exp;
+
+    void DumpIR(ostream &os) const override {}
+    void Semantic() const override 
+    {
+        const_exp->Semantic();
+    }
+    int Value() const override
+    {
+        return const_exp->Value();
+    }
+};
+
+// LVal ::= IDENT;
+class LVal_AST: public BaseAST 
+{
+public: 
+    string ident;
+
+    void DumpIR(ostream &os) const override {}
+    void Semantic() const override
+    {
+        assert(sym_table.find(ident) != sym_table.end());
+    }
+    int Value() const override 
+    {
+        assert(sym_table.find(ident) != sym_table.end());
+        return sym_table[ident];
+    }
+};
+
+// ConstExp ::= Exp;
+class ConstExp_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> exp;
+
+    void DumpIR(ostream &os) const override {}
+    void Semantic() const override 
+    {
+        exp->Semantic();
+    }
+
+    int Value() const override
+    {
+        return exp->Value();
     }
 };

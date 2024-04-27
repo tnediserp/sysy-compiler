@@ -19,12 +19,17 @@ main /*fejfefej*/
     
     
     */
+   const int x =1*6+32, y=6/3*4, z=9+3-6;
+   const int x = 9;
+   const int z = 45;
+   const int w=746;
+   const int q = 399;
     return//kfkrfrk
     /*rjfrjjfrjf fjerif*/ 
     /* eieuuierwuf  jhgerirtruuwiuet
     //ierruurug ruiu
     This a random comment. I want to use it to corret the wrong answers in this program. However, this seems inpossible. .*/
-    1+1*6-4/2
+    w-q
     /*nfejfnernnerf*/
     
 /*
