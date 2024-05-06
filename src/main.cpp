@@ -22,7 +22,8 @@ using namespace std;
 // 看起来会很烦人, 于是干脆采用这种看起来 dirty 但实际很有效的手段
 extern FILE *yyin;
 extern int yyparse(unique_ptr<BaseAST> &ast);
-extern map<koopa_raw_value_t, string> registers;
+// extern map<koopa_raw_value_t, string> registers;
+extern Stack stack;
 
 map<string, ST_item> sym_table; // 符号表
 bool eof = false; // 是否遇到return
@@ -75,8 +76,8 @@ int main(int argc, const char *argv[]) {
         koopa_raw_program_t raw = str2raw(str);
         delete [] str;
 
-        registers.clear();
-        Dist_regs(raw);
+        // registers.clear();
+        // Dist_regs(raw);
 
         ofstream yyout;
         yyout.open(output);

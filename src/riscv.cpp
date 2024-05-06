@@ -2,6 +2,7 @@
 #include <inc/ST.hpp>
 
 map<koopa_raw_value_t, string> registers;
+Stack stack; // 记录该变量在栈中相对栈指针的偏移量
 
 // 将文本形式IR转换为内存形式
 koopa_raw_program_t str2raw(const char *str)
@@ -25,7 +26,7 @@ koopa_raw_program_t str2raw(const char *str)
  */
 string cast_Reg(int value_num)
 {
-    assert(value_num <= 14);
+    // assert(value_num <= 14);
     string str;
     if (value_num >= 0 && value_num <= 6)
     {
@@ -116,6 +117,61 @@ void Dist_regs(const koopa_raw_value_t &value)
 
 }
 
+// 计算slice需要的总共栈空间
+int Stack_size(const koopa_raw_slice_t &slice)
+{
+    int size = 0;
+    for (size_t i = 0; i < slice.len; ++i) 
+    {
+        auto ptr = slice.buffer[i];
+        // 根据 slice 的 kind 决定将 ptr 视作何种元素
+        switch (slice.kind) {
+            case KOOPA_RSIK_FUNCTION:
+                // 访问函数
+                size += Stack_size(reinterpret_cast<koopa_raw_function_t>(ptr));
+                break;
+            case KOOPA_RSIK_BASIC_BLOCK:
+                // 访问基本块
+                size += Stack_size(reinterpret_cast<koopa_raw_basic_block_t>(ptr));
+                break;
+            case KOOPA_RSIK_VALUE:
+            {
+                // 访问指令
+                size += Stack_size(reinterpret_cast<koopa_raw_value_t>(ptr));
+                break;
+            }
+            default:
+                // 我们暂时不会遇到其他内容, 于是不对其做任何处理
+                assert(false);
+        }
+    }
+    return size;
+}
+
+// 计算函数需要的栈空间
+int Stack_size(const koopa_raw_function_t &func)
+{
+    return Stack_size(func->bbs);
+}
+
+// 计算基本块需要的栈空间
+int Stack_size(const koopa_raw_basic_block_t &bb)
+{
+    return Stack_size(bb->insts);
+}
+
+// 计算指令需要的栈空间，并为该条指令在栈上分配一个位置
+int Stack_size(const koopa_raw_value_t &value)
+{   
+    // 不需要栈空间的情形
+    if (value->kind.tag == KOOPA_RVT_RETURN || value->kind.tag == KOOPA_RVT_INTEGER || value->kind.tag == KOOPA_RVT_STORE)
+        return 0;
+    // ad-hoc solution: size = 4;
+    stack.offset[value] = stack.size;
+    stack.size += 4;
+    return 4;
+}
+
 
 // 访问 raw program
 void DumpRISC(const koopa_raw_program_t &program, ostream &os)
@@ -161,6 +217,22 @@ void DumpRISC(const koopa_raw_function_t &func, ostream &os)
 {
     os << ".globl " << 1 + func->name << endl;
     os << 1 + func->name << ":" << endl;
+
+    // 计算函数所需栈的大小
+    int stack_size = Stack_size(func);
+    stack_size = 16 * ((stack.size + 15) / 16); // 16字节对齐
+    
+    // 使用 addi
+    if (stack_size <= 2048)
+        os << "addi sp, sp, " << -stack_size << endl;
+    
+    // 使用 add
+    else 
+    {
+        os << "li t0, " << -stack_size << endl;
+        os << "add sp, sp, t0" << endl;
+    }
+
     DumpRISC(func->bbs, os);
 }
 
@@ -184,13 +256,28 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
         case KOOPA_RVT_RETURN:
             // 访问 return 指令
             DumpRISC(kind.data.ret, registers[value], os);
+            os << endl;
             break;
         case KOOPA_RVT_INTEGER:
             // 访问 integer 指令
             DumpRISC(kind.data.integer, os);
             break;
         case KOOPA_RVT_BINARY: 
-            DumpRISC(kind.data.binary, registers[value], os);
+            DumpRISC(kind.data.binary, os);
+            os << "sw t0, " << stack.offset[value] << "(sp)" << endl;
+            os << endl;
+            break;
+        case KOOPA_RVT_LOAD: 
+            DumpRISC(kind.data.load, os);
+            os << "sw t0, " << stack.offset[value] << "(sp)" << endl;
+            os << endl;
+            break;
+        case KOOPA_RVT_STORE: 
+            DumpRISC(kind.data.store, os);
+            os << endl;
+            break;
+        case KOOPA_RVT_ALLOC:
+            DumpRISC(kind.data.global_alloc, os);
             break;
         default:
             // 其他类型暂时遇不到
@@ -210,12 +297,46 @@ void DumpRISC(const koopa_raw_integer_t &integer, ostream &os)
 // ret 
 void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os)
 {
-    if (Load_imm(ret.value, reg))
-        Load_imm_dump(ret.value, os);
+    if (ret.value->kind.tag == KOOPA_RVT_INTEGER)
+        os << "li a0, " << ret.value->kind.data.integer.value << endl;
+    else os << "lw a0, " << stack.offset[ret.value] << "(sp)" << endl;
+
+    // 恢复栈指针
+    int stack_size = 16 * ((stack.size + 15) / 16);
+
+    // 使用 addi
+    if (stack_size <= 2048)
+        os << "addi sp, sp, " << stack_size << endl;
     
-    CheckReg(ret.value);
-    os << "mv a0, " << registers[ret.value] << endl;
+    // 使用 add
+    else 
+    {
+        os << "li t0, " << stack_size << endl;
+        os << "add sp, sp, t0" << endl;
+    }
+
     os << "ret" << endl;
+}
+
+// alloc
+void DumpRISC(const koopa_raw_global_alloc_t &alloc, ostream &os)
+{
+    // do nothing.
+    return;
+}
+
+// load
+void DumpRISC(const koopa_raw_load_t &load, ostream &os)
+{
+    os << "lw t0, " << stack.offset[load.src] << "(sp)" << endl;
+    // os << "sw t0, " << stack.offset[value] << endl;
+}
+
+// store value, dest
+void DumpRISC(const koopa_raw_store_t &store, ostream &os)
+{
+    Load_addr_dump(store.value, "t0", os);
+    os << "sw t0, " << stack.offset[store.dest] << "(sp)" << endl;
 }
 
 // 检查指令是否已分配寄存器
@@ -256,110 +377,92 @@ void Load_imm_dump(const koopa_raw_value_t &value, ostream &os)
     os << "li " << registers[value] << ", " << value->kind.data.integer.value << endl;
 }
 
-// binary
-void DumpRISC(const koopa_raw_binary_t &binary, string reg, ostream &os)
+// 把value对应的内容（可能是一个地址或立即数）load到寄存器reg中
+void Load_addr_dump(const koopa_raw_value_t &value, string reg, ostream &os)
 {
-    // 如果lhs或rhs是立即数，将它们load到寄存器中
-    bool lreg_li = Load_imm(binary.lhs, reg);
-    bool rreg_li = Load_imm(binary.rhs, next_Reg(reg));
+    // integer
+    if (value->kind.tag == KOOPA_RVT_INTEGER)
+        os << "li " << reg << ", " << value->kind.data.integer.value << endl;
 
-    string lreg = registers[binary.lhs], rreg = registers[binary.rhs];
+    // address
+    else 
+        os << "lw " << reg << ", " << stack.offset[value] << "(sp)" << endl;
+}
 
-    if (lreg_li) Load_imm_dump(binary.lhs, os);
+// binary
+void DumpRISC(const koopa_raw_binary_t &binary, ostream &os)
+{
+    // 将lhs load 到 t0 中，rhs load 到 t1 中
+    Load_addr_dump(binary.lhs, "t0", os);
+    Load_addr_dump(binary.rhs, "t1", os);
+
 
     switch (binary.op)
     {
     case KOOPA_RBO_EQ:
-        if (rreg_li) Load_imm_dump(binary.rhs, os);
-
         // xor t0, t0, x0;
-        os << "xor " << reg << ", " << lreg << ", " << rreg << endl;
+        os << "xor t0, t0, t1" << endl;
 
         // seqz t0
-        os << "seqz " << reg << ", " << reg << endl;
+        os << "seqz t0, t0" << endl;
         break;
 
     case KOOPA_RBO_ADD:
-        // addi
-        if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER)
-            os << "addi " << reg << ", "<< lreg << ", " << binary.rhs->kind.data.integer.value << endl;
-
-        // add
-        else os << "add " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "add t0, t0, t1" << endl;
         break;
     
     case KOOPA_RBO_SUB:
-        if (rreg_li) Load_imm_dump(binary.rhs, os);
-        os << "sub " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "sub t0, t0, t1" << endl;
         break;
 
     case KOOPA_RBO_MUL:
-        if (rreg_li) Load_imm_dump(binary.rhs, os);
-        os << "mul " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "mul t0, t0, t1" << endl;
         break;
 
 
     case KOOPA_RBO_DIV: 
-        if (rreg_li) Load_imm_dump(binary.rhs, os);
-        os << "div " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "div t0, t0, t1" << endl;
         break;
 
     case KOOPA_RBO_MOD:
-        if (rreg_li) Load_imm_dump(binary.rhs, os);
-        os << "rem " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "rem t0, t0, t1" << endl;
         break;
 
     case KOOPA_RBO_AND:
-        // andi
-        if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER)
-            os << "andi " << reg << ", "<< lreg << ", " << binary.rhs->kind.data.integer.value << endl;
-
-        // and
-        else os << "and " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "and t0, t0, t1" << endl;
         break;
     
     case KOOPA_RBO_OR:
-        // ori
-        if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER)
-            os << "ori " << reg << ", "<< lreg << ", " << binary.rhs->kind.data.integer.value << endl;
-
-        // or
-        else os << "or " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "or t0, t0, t1" << endl;
         break;
     
     case KOOPA_RBO_XOR:
-        // xori
-        if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER)
-            os << "xori " << reg << ", "<< lreg << ", " << binary.rhs->kind.data.integer.value << endl;
-
-        // xor
-        else os << "xor " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "xor t0, t0, t1" << endl;
         break;
 
     case KOOPA_RBO_GT:
-        if (rreg_li) Load_imm_dump(binary.rhs, os);
-        os << "sgt " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "sgt t0, t0, t1" << endl;
         break;
     
     case KOOPA_RBO_LT:
-        if (rreg_li) Load_imm_dump(binary.rhs, os);
-        os << "slt " << reg << ", "<< lreg << ", " << rreg << endl;
+        os << "slt t0, t0, t1" << endl;
         break;
 
     case KOOPA_RBO_GE:
-        if (rreg_li) Load_imm_dump(binary.rhs, os);
-        os << "slt " << reg << ", "<< lreg << ", " << rreg << endl;
-        os << "seqz " << reg << ", " << reg << endl;
+        os << "slt t0, t0, t1" << endl;
+        os << "seqz t0, t0" << endl;
         break;
 
     case KOOPA_RBO_LE:
-        if (rreg_li) Load_imm_dump(binary.rhs, os);
-        os << "sgt " << reg << ", "<< lreg << ", " << rreg << endl;
-        os << "seqz " << reg << ", " << reg << endl;
+        os << "sgt t0, t0, t1" << endl;
+        os << "seqz t0, t0" << endl;
         break;
 
     default:
         assert(false);
         break;
     }
+
+    // store
+    // os << "sw t0, " << stack.offset[value] << "(sp)" << endl;
 }
