@@ -21,6 +21,22 @@ main /*fejfefej*/
     */
    int x = 10;
    x = x + 1;
+   {
+    x=2;
+    int x=4;
+    x = x+ 3;
+    {
+        x = x+7;
+        int x;
+        x = x+ 10;
+    }
+    {
+        x = x+11;
+        int x = x-3;
+        x = x + 15;
+    }
+   }
+   ;
    return x;
    
    const int x =2238, y=6/3*4, z=9+3-6;

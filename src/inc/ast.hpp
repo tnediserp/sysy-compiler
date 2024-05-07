@@ -9,9 +9,9 @@
 #include <inc/ST.hpp>
 using namespace std;
 
-extern map<string, ST_item> sym_table;
+extern ST_stack sym_table;
 extern bool eof;
-
+string IR_name(string ident, int num);
 
 // 寄存器类
 class Register
@@ -113,6 +113,7 @@ public:
     void DumpIR(ostream &os) const override
     {
         os << "fun @" << ident << "(): i32 {" << endl;
+        os << "%" << "entry" << ":" << endl;
         block->DumpIR(os);
         os << "}";
     }
@@ -150,15 +151,19 @@ public:
 
     void DumpIR(ostream &os) const override
     {
-        os << "%" << "entry" << ":" << endl;
+        // os << "%" << "entry" << ":" << endl;
         for (int i = 0; i < block_item.size() && !eof; i++)
             block_item[i]->DumpIR(os);
     }
 
     void Semantic() override
     {
+        sym_table.push_scope();
+
         for (int i = 0; i < block_item.size(); i++)
             block_item[i]->Semantic();
+    
+        sym_table.pop_scope();
     }
 };
 
@@ -203,7 +208,31 @@ public:
     }
 };
 
+// Stmt ::= Block
+class Stmt2Blk_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> block;
+
+    void DistriReg(int lb) override 
+    {
+        block->DistriReg(lb);
+        reg.num = block->reg.num;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        block->DumpIR(os);
+    }
+
+    void Semantic() override
+    {
+        block->Semantic();
+    }
+};
+
 // Stmt ::= "return" Exp ";";
+// Stmt ::= "return" ";"
 class Stmt2Ret_AST : public BaseAST
 {
 public:
@@ -213,18 +242,26 @@ public:
 
     void DistriReg(int lb) override 
     {
+        if (exp == nullptr) return;
         exp->DistriReg(lb);
         reg.num = exp->reg.num;
     }  
 
     void DumpIR(ostream &os) const override
     {
-        exp->DumpIR(os);
-        os << "ret " << exp->reg << endl;
+        if (exp != nullptr)
+        {
+            exp->DumpIR(os);
+            os << "ret " << exp->reg << endl;
+        }
+        else 
+            os << "ret" << endl;
+        
         eof = true; // 标志程序已经截止。
     }
     void Semantic() override 
     {
+        if (exp == nullptr) return;
         exp->Semantic();
         reg.is_var = exp->reg.is_var;
         reg.value = exp->reg.value;
@@ -237,6 +274,7 @@ class Stmt2Assign_AST: public BaseAST
 public: 
     unique_ptr<BaseAST> lval;
     string ident;
+    string ir_name; // ir表示中的名字
     unique_ptr<BaseAST> exp;
 
     void DistriReg(int lb) override 
@@ -251,7 +289,7 @@ public:
         exp->DumpIR(os);
 
         // string ident = ((LVal_AST *) (lval.get()))->ident;
-        os << "store " << exp->reg << ", @" << ident << endl;
+        os << "store " << exp->reg << ", @" << ir_name << endl;
     }
 
     void Semantic() override 
@@ -264,8 +302,35 @@ public:
         reg.value = exp->reg.value;
 
         // string ident = ((LVal_AST *) (lval.get()))->ident;
-        sym_table[ident].is_var = true;
-        sym_table[ident].value = reg.value;
+        pair<ST_item, int> pr = sym_table.modify_item(ident, ST_item(true, reg.value));
+
+        ir_name = IR_name(ident, pr.second);
+    }
+};
+
+// Stmt ::= [Exp] ";"
+class Stmt2Exp_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> exp;
+
+    void DistriReg(int lb) override
+    {
+        if (exp == nullptr) return;
+        exp->DistriReg(lb);
+        reg.num = exp->reg.num;
+    }
+    void DumpIR(ostream &os) const override
+    {
+        if (exp == nullptr) return;
+        exp->DumpIR(os);
+    }
+    void Semantic() override 
+    {
+        if (exp == nullptr) return;
+        exp->Semantic();
+        reg.is_var = exp->reg.is_var;
+        reg.value = exp->reg.value;
     }
 };
 
@@ -1118,6 +1183,7 @@ class ConstDef_AST: public BaseAST
 {
 public: 
     string ident;
+    // string ir_name;
     unique_ptr<BaseAST> constinitval;
 
     void DistriReg(int lb) override 
@@ -1132,8 +1198,7 @@ public:
         constinitval->Semantic();
 
         assert(!constinitval->reg.is_var);
-        sym_table[ident].is_var = false;
-        sym_table[ident].value = constinitval->reg.value;
+        sym_table.add_item(ident, ST_item(false, constinitval->reg.value));
 
         reg.is_var = false;
         reg.value = constinitval->reg.value;
@@ -1145,6 +1210,7 @@ class VarDef_init_AST: public BaseAST
 {
 public: 
     string ident;
+    string ir_name;
     unique_ptr<BaseAST> initval;
 
     void DistriReg(int lb) override
@@ -1156,18 +1222,20 @@ public:
     void DumpIR(ostream &os) const override
     {
         initval->DumpIR(os);
-        os << "@" << ident <<  " = alloc i32" << endl;
-        os << "store " << initval->reg << ", @" << ident << endl;
+        os << "@" << ir_name <<  " = alloc i32" << endl;
+        os << "store " << initval->reg << ", @" << ir_name << endl;
     }
 
     void Semantic() override
     {
         initval->Semantic();
-        sym_table[ident].is_var = true;
-        sym_table[ident].value = initval->reg.value;
+
+        sym_table.add_item(ident, ST_item(true, initval->reg.value));
 
         reg.is_var = true;
         reg.value = initval->reg.value;
+
+        ir_name = IR_name(ident, sym_table.top_num);
     }
 
 };
@@ -1177,6 +1245,7 @@ class VarDef_noninit_AST: public BaseAST
 {
 public: 
     string ident;
+    string ir_name;
     
     void DistriReg(int lb) override 
     {
@@ -1185,16 +1254,17 @@ public:
 
     void DumpIR(ostream &os) const override 
     {
-        os << "@" << ident <<  " = alloc i32" << endl;
+        os << "@" << ir_name <<  " = alloc i32" << endl;
     }
 
     void Semantic() override
     {
-        sym_table[ident].is_var = true;
-        sym_table[ident].value = 0;
+        sym_table.add_item(ident, ST_item(true, 0));
 
         reg.is_var = true;
         reg.value = 0;
+
+        ir_name = IR_name(ident, sym_table.top_num);
     }
 };
 
@@ -1255,6 +1325,7 @@ class LVal_AST: public BaseAST
 {
 public: 
     string ident;
+    string ir_name;
 
     void DistriReg(int lb) override
     {
@@ -1266,18 +1337,22 @@ public:
         if (!reg.is_var) return;
 
         // variable: dump here
-        os << reg << " = load @" << ident << endl;
+        os << reg << " = load @" << ir_name << endl;
     }
     void Semantic() override
     {
-        assert(sym_table.find(ident) != sym_table.end());
-        reg.is_var = sym_table[ident].is_var;
-        reg.value = sym_table[ident].value;
+        pair<ST_item, int> pr = sym_table.look_up(ident);
+        // assert(sym_table.find(ident) != sym_table.end());
+        reg.is_var = pr.first.is_var;
+        reg.value = pr.first.value;
+
+        ir_name = IR_name(ident, pr.second);
     }
     int Value() const override 
     {
-        assert(sym_table.find(ident) != sym_table.end());
-        return sym_table[ident].value;
+        pair<ST_item, int> pr = sym_table.look_up(ident);
+        // assert(sym_table.find(ident) != sym_table.end());
+        return pr.first.value;
     }
 };
 

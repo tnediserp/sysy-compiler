@@ -155,12 +155,32 @@ Stmt
     ast->exp = unique_ptr<BaseAST>($2);
     $$ = ast;
   }
+  | RETURN ';' {
+    auto ast = new Stmt2Ret_AST();
+    ast->exp = unique_ptr<BaseAST>((BaseAST *) NULL);
+    $$ = ast;
+  }
   | LVal '=' Exp ';' {
       auto ast = new Stmt2Assign_AST();
       ast->lval = unique_ptr<BaseAST>($1);
       ast->ident = ((LVal_AST *) $1)->ident;
       ast->exp = unique_ptr<BaseAST>($3);
       $$ = ast;
+  }
+  | Exp ';' {
+    auto ast = new Stmt2Exp_AST();
+    ast->exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | ';' {
+    auto ast = new Stmt2Exp_AST();
+    ast->exp = unique_ptr<BaseAST>((BaseAST *) NULL);
+    $$ = ast;
+  }
+  | Block {
+    auto ast = new Stmt2Blk_AST();
+    ast->block = unique_ptr<BaseAST>($1);
+    $$ = ast;
   }
   ;
 
