@@ -251,6 +251,7 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
 {
     // 根据指令类型判断后续需要如何访问
     const auto &kind = value->kind;
+    int offset;
     switch (kind.tag) 
     {
         case KOOPA_RVT_RETURN:
@@ -264,12 +265,28 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
             break;
         case KOOPA_RVT_BINARY: 
             DumpRISC(kind.data.binary, os);
-            os << "sw t0, " << stack.offset[value] << "(sp)" << endl;
+            offset = stack.offset[value];
+            if (offset < 2048)
+                os << "sw t0, " << stack.offset[value] << "(sp)" << endl;
+            
+            else {
+                os << "li t1, " << offset << endl;
+                os << "add t1, t1, sp" << endl;
+                os << "sw t0, 0(t1)" << endl;
+            }
             os << endl;
             break;
         case KOOPA_RVT_LOAD: 
             DumpRISC(kind.data.load, os);
-            os << "sw t0, " << stack.offset[value] << "(sp)" << endl;
+            offset = stack.offset[value];
+            if (offset < 2048)
+                os << "sw t0, " << stack.offset[value] << "(sp)" << endl;
+            
+            else {
+                os << "li t1, " << offset << endl;
+                os << "add t1, t1, sp" << endl;
+                os << "sw t0, 0(t1)" << endl;
+            }
             os << endl;
             break;
         case KOOPA_RVT_STORE: 
@@ -328,7 +345,15 @@ void DumpRISC(const koopa_raw_global_alloc_t &alloc, ostream &os)
 // load
 void DumpRISC(const koopa_raw_load_t &load, ostream &os)
 {
-    os << "lw t0, " << stack.offset[load.src] << "(sp)" << endl;
+    int offset = stack.offset[load.src];
+    if (offset < 2048)
+        os << "lw t0, " << stack.offset[load.src] << "(sp)" << endl;
+    
+    else {
+        os << "li t1, " << offset << endl;
+        os << "add t1, t1, sp" << endl;
+        os << "lw t0, 0(t1)" << endl;
+    }
     // os << "sw t0, " << stack.offset[value] << endl;
 }
 
@@ -336,7 +361,15 @@ void DumpRISC(const koopa_raw_load_t &load, ostream &os)
 void DumpRISC(const koopa_raw_store_t &store, ostream &os)
 {
     Load_addr_dump(store.value, "t0", os);
-    os << "sw t0, " << stack.offset[store.dest] << "(sp)" << endl;
+    int offset = stack.offset[store.dest];
+    if (offset < 2048)
+        os << "sw t0, " << stack.offset[store.dest] << "(sp)" << endl;
+    
+    else {
+        os << "li t1, " << offset << endl;
+        os << "add t1, t1, sp" << endl;
+        os << "sw t0, 0(t1)" << endl;
+    }
 }
 
 // 检查指令是否已分配寄存器
