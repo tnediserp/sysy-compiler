@@ -19,41 +19,17 @@ main /*fejfefej*/
     
     
     */
-   int x = 10;
-   x = x + 1;
-   {
-    x=2;
-    int x=4;
-    x = x+ 3;
-    {
-        x = x+7;
-        int x;
-        x = x+ 10;
-    }
-    {
-        x = x+11;
-        int x = x-3;
-        x = x + 15;
-    }
-   }
-   ;
-   return x;
    
-   const int x =2238, y=6/3*4, z=9+3-6;
-   int a=2030;
-   int b=a-x+89;
-   b=b-a/4;
-   const int h=98;
-   return x-a-3*h+7*y/b;
-   
-   const int pi = 5;
+    int a, b;
+    !(!a || !b);
+
 
     return//kfkrfrk
     /*rjfrjjfrjf fjerif*/ 
     /* eieuuierwuf  jhgerirtruuwiuet
     //ierruurug ruiu
     This a random comment. I want to use it to corret the wrong answers in this program. However, this seems inpossible. .*/
-    pi+7
+    7
     /*nfejfnernnerf*/
     
 /*

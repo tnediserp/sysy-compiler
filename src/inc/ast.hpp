@@ -11,7 +11,9 @@ using namespace std;
 
 extern ST_stack sym_table;
 extern bool eof;
+extern int if_stmt_num;
 string IR_name(string ident, int num);
+string if_stmt_name(string ident, int num);
 
 // 寄存器类
 class Register
@@ -242,7 +244,11 @@ public:
 
     void DistriReg(int lb) override 
     {
-        if (exp == nullptr) return;
+        if (exp == nullptr) 
+        {
+            reg.num = lb + 1;
+            return;
+        }
         exp->DistriReg(lb);
         reg.num = exp->reg.num;
     }  
@@ -316,7 +322,11 @@ public:
 
     void DistriReg(int lb) override
     {
-        if (exp == nullptr) return;
+        if (exp == nullptr) 
+        {
+            reg.num = lb;
+            return;
+        }
         exp->DistriReg(lb);
         reg.num = exp->reg.num;
     }
@@ -331,6 +341,108 @@ public:
         exp->Semantic();
         reg.is_var = exp->reg.is_var;
         reg.value = exp->reg.value;
+    }
+};
+
+// Stmt ::= "if" "(" Exp ")" Stmt
+class Stmt2Sing_IF_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> exp;
+    unique_ptr<BaseAST> stmt;
+    int if_num;
+
+    void DistriReg(int lb) override
+    {
+        exp->DistriReg(lb);
+        stmt->DistriReg(exp->reg.num + 1);
+        reg.num = stmt->reg.num + 1;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        string then_label = if_stmt_name("then", if_num);
+        string end_label = if_stmt_name("end", if_num);
+        bool eof_then;
+
+        exp->DumpIR(os);
+        os << "br " << exp->reg << ", " << then_label << ", " << end_label << endl;
+
+        os << then_label << ":" << endl;
+        stmt->DumpIR(os);
+        eof_then = eof;
+        eof = false;
+        if (!eof_then) // stmt中并没有返回，则需要输出jump
+            os << "jump " << end_label << endl;
+
+        os << end_label << ":" << endl;
+    }
+
+    void Semantic() override
+    {
+        if_num = if_stmt_num++;
+        exp->Semantic();
+        stmt->Semantic();
+    }
+};
+
+// "if" "(" Exp ")" Stmt "else" Stmt
+class Stmt2With_ELSE_AST: public BaseAST
+{
+public:
+    unique_ptr<BaseAST> exp;
+    unique_ptr<BaseAST> then_stmt;
+    unique_ptr<BaseAST> else_stmt;
+    int if_num;
+
+    void DistriReg(int lb) override
+    {
+        exp->DistriReg(lb);
+        then_stmt->DistriReg(exp->reg.num + 1);
+        else_stmt->DistriReg(then_stmt->reg.num + 1);
+        reg.num = else_stmt->reg.num + 1;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        string then_label = if_stmt_name("then", if_num);
+        string else_label = if_stmt_name("else", if_num);
+        string end_label = if_stmt_name("end", if_num);
+        bool eof_then, eof_else; // 记录then, else分支是否返回
+
+        exp->DumpIR(os);
+        os << "br " << exp->reg << ", " << then_label << ", " << else_label << endl;
+
+        os << then_label << ":" << endl;
+        then_stmt->DumpIR(os);
+        eof_then = eof;
+        if (!eof_then) // then分支中并没有返回，则需要输出jump
+        {
+            os << "jump " << end_label << endl;
+        }
+            
+        eof = false;
+        os << else_label << ":" << endl;
+        else_stmt->DumpIR(os);
+        eof_else = eof;
+        if (!eof_else) // else分支中并没有返回，则需要输出jump
+        {
+            os << "jump " << end_label << endl;
+        }
+        if (!eof_then || !eof_else) // then或else分支没有返回，则需要输出下一个label
+        {
+            eof = false;
+            os << end_label << ":" << endl;
+        }
+            
+    }
+
+    void Semantic() override 
+    {
+        if_num = if_stmt_num++;
+        exp->Semantic();
+        then_stmt->Semantic();
+        else_stmt->Semantic();
     }
 };
 

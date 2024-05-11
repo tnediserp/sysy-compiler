@@ -25,8 +25,8 @@ extern int yyparse(unique_ptr<BaseAST> &ast);
 // extern map<koopa_raw_value_t, string> registers;
 extern Stack stack;
 
-ST_stack sym_table; // 符号表
-bool eof = false; // 是否遇到return
+extern ST_stack sym_table; // 符号表
+extern bool eof; // 是否遇到return
 
 
 int main(int argc, const char *argv[]) {

@@ -45,6 +45,8 @@ Eq            "=="|"!="
 "&&"            { return LAND; }
 "||"            { return LOR; }
 "const"         { return CONST; }
+"if"            { return IF; }
+"else"          { return ELSE; }
 
 {Identifier}    { yylval.str_val = new string(yytext); return IDENT; }
 {Rel}           { yylval.str_val = new string(yytext); return REL; }
