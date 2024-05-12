@@ -239,6 +239,7 @@ void DumpRISC(const koopa_raw_function_t &func, ostream &os)
 // 访问基本块
 void DumpRISC(const koopa_raw_basic_block_t &bb, ostream &os)
 {
+    os << bb->name + 1 << ":" << endl;
     DumpRISC(bb->insts, os);
 }
 
@@ -295,6 +296,14 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
             break;
         case KOOPA_RVT_ALLOC:
             DumpRISC(kind.data.global_alloc, os);
+            break;
+        case KOOPA_RVT_BRANCH: 
+            DumpRISC(kind.data.branch, os);
+            os << endl;
+            break;
+        case KOOPA_RVT_JUMP:
+            DumpRISC(kind.data.jump, os);
+            os << endl;
             break;
         default:
             // 其他类型暂时遇不到
@@ -370,6 +379,20 @@ void DumpRISC(const koopa_raw_store_t &store, ostream &os)
         os << "add t1, t1, sp" << endl;
         os << "sw t0, 0(t1)" << endl;
     }
+}
+
+// branch
+void DumpRISC(const koopa_raw_branch_t &branch, ostream &os)
+{
+    Load_addr_dump(branch.cond, "t0", os);
+    os << "bnez t0, " << branch.true_bb->name + 1 << endl;
+    os << "j " << branch.false_bb->name + 1 << endl;
+}
+
+// jump
+void DumpRISC(const koopa_raw_jump_t &jump, ostream &os)
+{
+    os << "j " << jump.target->name + 1 << endl;
 }
 
 // 检查指令是否已分配寄存器

@@ -20,8 +20,23 @@ main /*fejfefej*/
     
     */
    
-    int a, b;
-    !(!a || !b);
+    int a = 10, b;
+    b=a+3;
+    if (a <= 100 && b>=293)
+    {
+        a=a+3;
+        b=b-a+329;
+        a=a-b;
+        return a;
+    }
+    else 
+    {
+        a=a+5;
+        b=b+329;
+        a=a-b;
+    }
+
+    return a-b+7;
 
 
     return//kfkrfrk

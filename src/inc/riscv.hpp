@@ -29,6 +29,8 @@ void DumpRISC(const koopa_raw_binary_t &binary, ostream &os);
 void DumpRISC(const koopa_raw_global_alloc_t &alloc, ostream &os);
 void DumpRISC(const koopa_raw_load_t &load, ostream &os);
 void DumpRISC(const koopa_raw_store_t &store, ostream &os);
+void DumpRISC(const koopa_raw_branch_t &branch, ostream &os);
+void DumpRISC(const koopa_raw_jump_t &jump, ostream &os);
 void CheckReg(const koopa_raw_value_t &value);
 bool Load_imm(const koopa_raw_value_t &value, string reg);
 void Load_imm_dump(const koopa_raw_value_t &value, ostream &os);
