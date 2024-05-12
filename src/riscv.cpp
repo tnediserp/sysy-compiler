@@ -325,7 +325,18 @@ void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os)
 {
     if (ret.value->kind.tag == KOOPA_RVT_INTEGER)
         os << "li a0, " << ret.value->kind.data.integer.value << endl;
-    else os << "lw a0, " << stack.offset[ret.value] << "(sp)" << endl;
+    else 
+    {
+        int offset = stack.offset[ret.value];
+        if (offset < 2048)
+            os << "lw a0, " << offset << "(sp)" << endl;
+        else 
+        {
+            os << "li t1, " << offset << endl;
+            os << "add t1, t1, sp" << endl;
+            os << "lw a0, 0(t1)" << endl;
+        }
+    }
 
     // 恢复栈指针
     int stack_size = 16 * ((stack.size + 15) / 16);
@@ -442,7 +453,18 @@ void Load_addr_dump(const koopa_raw_value_t &value, string reg, ostream &os)
 
     // address
     else 
-        os << "lw " << reg << ", " << stack.offset[value] << "(sp)" << endl;
+    {
+        int offset = stack.offset[value];
+        if (offset < 2048)
+            os << "lw " << reg << ", " << offset << "(sp)" << endl;
+        else 
+        {
+            os << "li t1, " << offset << endl;
+            os << "add t1, t1, sp" << endl;
+            os << "lw " << reg << ", 0(t1)" << endl;
+        }
+    }
+        
 }
 
 // binary
