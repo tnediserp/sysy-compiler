@@ -223,7 +223,7 @@ void DumpRISC(const koopa_raw_function_t &func, ostream &os)
     stack_size = 16 * ((stack.size + 15) / 16); // 16字节对齐
     
     // 使用 addi
-    if (stack_size <= 2048)
+    if (stack_size < 2048)
         os << "addi sp, sp, " << -stack_size << endl;
     
     // 使用 add
@@ -331,7 +331,7 @@ void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os)
     int stack_size = 16 * ((stack.size + 15) / 16);
 
     // 使用 addi
-    if (stack_size <= 2048)
+    if (stack_size < 2048)
         os << "addi sp, sp, " << stack_size << endl;
     
     // 使用 add
