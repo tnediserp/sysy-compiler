@@ -14,6 +14,7 @@ extern bool eof;
 extern int if_stmt_num;
 string IR_name(string ident, int num);
 string if_stmt_name(string ident, int num);
+string logic_name(string ident, int num);
 
 // 寄存器类
 class Register
@@ -1073,26 +1074,46 @@ class LAExp2L_and_E_AST: public BaseAST
 public: 
     unique_ptr<BaseAST> laexp;
     unique_ptr<BaseAST> eexp;
-    Register imm_reg1, imm_reg2, imm_reg3; // 用于计算中间结果的临时寄存器
+    Register imm_reg1; // imm_reg2, imm_reg3; // 用于计算中间结果的临时寄存器
 
     void DistriReg(int lb) override 
     {
-        laexp->DistriReg(lb);
-        eexp->DistriReg(laexp->reg.num);
+        eexp->DistriReg(lb);
+        laexp->DistriReg(eexp->reg.num);
 
         // 需要使用imm_reg保存中间结果
-        imm_reg1.num = eexp->reg.num + 1; imm_reg1.is_var = true;
-        imm_reg2.num = eexp->reg.num + 2; imm_reg2.is_var = true;
-        imm_reg3.num = eexp->reg.num + 3; imm_reg3.is_var = true;
-        reg.num = eexp->reg.num + 4;
+        imm_reg1.num = laexp->reg.num + 1; imm_reg1.is_var = true;
+        // imm_reg2.num = eexp->reg.num + 2; imm_reg2.is_var = true;
+        // imm_reg3.num = eexp->reg.num + 3; imm_reg3.is_var = true;
+        reg.num = laexp->reg.num + 2;
     }
 
     void DumpIR(ostream &os) const override
     {
         if (!reg.is_var) return;
-        laexp->DumpIR(os);
-        eexp->DumpIR(os);
 
+        if_stmt_num++;
+        string true_label = if_stmt_name("and_true", if_stmt_num);
+        string next_label = if_stmt_name("and_next", if_stmt_num);
+        string log_name = logic_name("and", if_stmt_num);
+
+        os << "@" << log_name <<  " = alloc i32" << endl;
+        os << "store " << "0, @" << log_name << endl;
+    
+        eexp->DumpIR(os);
+        os << "br " << eexp->reg << ", " << true_label << ", " << next_label << endl;
+
+        // eexp != 0
+        os << true_label << ":" << endl;
+        laexp->DumpIR(os);
+        os << imm_reg1 << " = ne " << laexp->reg << ", 0" <<endl; 
+        os << "store " << imm_reg1<< ", @" << log_name << endl;
+        os << "jump " << next_label << endl;
+
+        os << next_label << ":" << endl;
+        os << reg << " = load @" << log_name << endl;
+
+/*
         // laexp == 0？
         os << imm_reg1 << " = eq " << laexp->reg << ", 0" <<endl; 
         // eexp = 0?
@@ -1101,6 +1122,7 @@ public:
         os << imm_reg3 << " = or " << imm_reg1 << ", " << imm_reg2 << endl;
         // 取反
         os << reg << " = eq " << imm_reg3 << ", 0" << endl;
+*/
     }
 
     void Semantic() override
@@ -1155,29 +1177,50 @@ class LOExp2L_or_LA_AST: public BaseAST
 public: 
     unique_ptr<BaseAST> loexp;
     unique_ptr<BaseAST> laexp;
-    Register imm_reg1, imm_reg2;
+    Register imm_reg1; // imm_reg2;
 
     void DistriReg(int lb) override 
     {
-        loexp->DistriReg(lb);
-        laexp->DistriReg(loexp->reg.num);
+        laexp->DistriReg(lb);
+        loexp->DistriReg(laexp->reg.num);
 
         // 需要使用imm_reg保存中间结果
-        imm_reg1.num = laexp->reg.num + 1; imm_reg1.is_var = true;
-        imm_reg2.num = laexp->reg.num + 2; imm_reg2.is_var = true;
-        reg.num = laexp->reg.num + 3;
+        imm_reg1.num = loexp->reg.num + 1; imm_reg1.is_var = true;
+        // imm_reg2.num = laexp->reg.num + 2; imm_reg2.is_var = true;
+        reg.num = loexp->reg.num + 2;
     }
 
     void DumpIR(ostream &os) const override
     {
         if (!reg.is_var) return;
-        loexp->DumpIR(os);
-        laexp->DumpIR(os);
 
+        if_stmt_num++;
+        string false_label = if_stmt_name("or_false", if_stmt_num);
+        string next_label = if_stmt_name("or_next", if_stmt_num);
+        string log_name = logic_name("or", if_stmt_num);
+
+        os << "@" << log_name <<  " = alloc i32" << endl;
+        os << "store " << "1, @" << log_name << endl;
+
+        laexp->DumpIR(os);
+        os << "br " << laexp->reg << ", " << next_label << ", " << false_label << endl;
+
+        // laexp == 0;
+        os << false_label << ":" << endl;
+        loexp->DumpIR(os);
+        os << imm_reg1 << " = ne " << loexp->reg << ", 0" << endl;
+        os << "store " << imm_reg1 << ", @" << log_name << endl;
+        os << "jump " << next_label << endl;
+
+        os << next_label << ":" << endl;
+        os << reg << " = load @" << log_name << endl;
+
+/*
         // 按位或非零，则一定有一个为真
         os << imm_reg1 << " = or " << loexp->reg << ", " << laexp->reg << endl;
         os << imm_reg2 << " = eq " << imm_reg1 << ", 0" << endl;
         os << reg << " = eq " << imm_reg2 << ", 0" << endl;
+*/
     }
 
     void Semantic() override

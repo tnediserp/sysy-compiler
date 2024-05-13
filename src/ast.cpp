@@ -7,10 +7,15 @@ int if_stmt_num;
 // 变量ident在ir中的新名字。num是其所在符号表的编号
 string IR_name(string ident, int num)
 {
-    return ident + "_" + to_string(num);
+    return "var_" + ident + "_" + to_string(num);
 }
 
 string if_stmt_name(string ident, int num)
 {
     return "%" + ident + "_" + to_string(num);
+}
+
+string logic_name(string ident, int num)
+{
+    return ident + "_" + to_string(num);
 }

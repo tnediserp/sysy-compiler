@@ -477,6 +477,10 @@ void DumpRISC(const koopa_raw_binary_t &binary, ostream &os)
 
     switch (binary.op)
     {
+    case KOOPA_RBO_NOT_EQ:
+        os << "xor t0, t0, t1" << endl;
+        os << "snez t0, t0" << endl;
+        break;
     case KOOPA_RBO_EQ:
         // xor t0, t0, x0;
         os << "xor t0, t0, t1" << endl;

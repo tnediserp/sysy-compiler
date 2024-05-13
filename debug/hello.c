@@ -20,24 +20,10 @@ main /*fejfefej*/
     
     */
    
-    int a = 10, b;
-    b=a+3;
-    if (a <= 100 && b>=293)
-    {
-        a=a+3;
-        b=b-a+329;
-        a=a-b;
-        return a;
-    }
-    else 
-    {
-        a=a+5;
-        b=b+329;
-        a=a-b;
-    }
+   int x = 10;
+   int y = x && 273 && (x+3) && !(x || (x-9));
 
-    return a-b+7;
-
+    return y;
 
     return//kfkrfrk
     /*rjfrjjfrjf fjerif*/ 
