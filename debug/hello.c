@@ -20,27 +20,15 @@ main /*fejfefej*/
     
     */
    
-   int x = 10;
-   int y = x && 273 && (x+3) && !(x || (x-9));
-   while (y)
-   {
-        int x = 100;
-        x = x + 3;
-        while (1)
-        {
-            int y = 1000;
-            y = y + x -1;
-            if (y >= x + 5)
-                break;
-        }
-        y = y - 1;
-        continue;
+   int x = 120;
+    while (1)
+    {
+        x = x + 1;
+        int y = 31;
         return x;
-   }
+    } 
 
-    return x + y;
-
-    return//kfkrfrk
+    // return//kfkrfrk
     /*rjfrjjfrjf fjerif*/ 
     /* eieuuierwuf  jhgerirtruuwiuet
     //ierruurug ruiu

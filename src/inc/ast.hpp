@@ -122,6 +122,8 @@ public:
         os << "fun @" << ident << "(): i32 {" << endl;
         os << "%" << "entry" << ":" << endl;
         block->DumpIR(os);
+        if (!eof)
+            os << "ret" << endl;
         os << "}";
     }
 
