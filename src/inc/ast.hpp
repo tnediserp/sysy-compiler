@@ -504,7 +504,10 @@ class Stmt2Break_AST: public BaseAST
 public: 
     int while_num;
 
-    void DistriReg(int lb) override {}
+    void DistriReg(int lb) override 
+    {
+        reg.num = lb + 1;
+    }
 
     void DumpIR(ostream &os) const override
     {
@@ -528,7 +531,10 @@ class Stmt2Conti_AST: public BaseAST
 public: 
     int while_num;
 
-    void DistriReg(int lb) override {}
+    void DistriReg(int lb) override 
+    {
+        reg.num = lb + 1;
+    }
 
     void DumpIR(ostream &os) const override
     {

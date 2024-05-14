@@ -34,6 +34,7 @@ main /*fejfefej*/
                 break;
         }
         y = y - 1;
+        continue;
         return x;
    }
 
