@@ -1078,14 +1078,14 @@ public:
 
     void DistriReg(int lb) override 
     {
-        eexp->DistriReg(lb);
-        laexp->DistriReg(eexp->reg.num);
+        laexp->DistriReg(lb);
+        eexp->DistriReg(laexp->reg.num);
 
         // 需要使用imm_reg保存中间结果
-        imm_reg1.num = laexp->reg.num + 1; imm_reg1.is_var = true;
+        imm_reg1.num = eexp->reg.num + 1; imm_reg1.is_var = true;
         // imm_reg2.num = eexp->reg.num + 2; imm_reg2.is_var = true;
         // imm_reg3.num = eexp->reg.num + 3; imm_reg3.is_var = true;
-        reg.num = laexp->reg.num + 2;
+        reg.num = eexp->reg.num + 2;
     }
 
     void DumpIR(ostream &os) const override
@@ -1100,13 +1100,13 @@ public:
         os << "@" << log_name <<  " = alloc i32" << endl;
         os << "store " << "0, @" << log_name << endl;
     
-        eexp->DumpIR(os);
-        os << "br " << eexp->reg << ", " << true_label << ", " << next_label << endl;
-
-        // eexp != 0
-        os << true_label << ":" << endl;
         laexp->DumpIR(os);
-        os << imm_reg1 << " = ne " << laexp->reg << ", 0" <<endl; 
+        os << "br " << laexp->reg << ", " << true_label << ", " << next_label << endl;
+
+        // laexp != 0
+        os << true_label << ":" << endl;
+        eexp->DumpIR(os);
+        os << imm_reg1 << " = ne " << eexp->reg << ", 0" <<endl; 
         os << "store " << imm_reg1<< ", @" << log_name << endl;
         os << "jump " << next_label << endl;
 
@@ -1181,13 +1181,13 @@ public:
 
     void DistriReg(int lb) override 
     {
-        laexp->DistriReg(lb);
-        loexp->DistriReg(laexp->reg.num);
+        loexp->DistriReg(lb);
+        laexp->DistriReg(loexp->reg.num);
 
         // 需要使用imm_reg保存中间结果
-        imm_reg1.num = loexp->reg.num + 1; imm_reg1.is_var = true;
+        imm_reg1.num = laexp->reg.num + 1; imm_reg1.is_var = true;
         // imm_reg2.num = laexp->reg.num + 2; imm_reg2.is_var = true;
-        reg.num = loexp->reg.num + 2;
+        reg.num = laexp->reg.num + 2;
     }
 
     void DumpIR(ostream &os) const override
@@ -1202,13 +1202,13 @@ public:
         os << "@" << log_name <<  " = alloc i32" << endl;
         os << "store " << "1, @" << log_name << endl;
 
-        laexp->DumpIR(os);
-        os << "br " << laexp->reg << ", " << next_label << ", " << false_label << endl;
-
-        // laexp == 0;
-        os << false_label << ":" << endl;
         loexp->DumpIR(os);
-        os << imm_reg1 << " = ne " << loexp->reg << ", 0" << endl;
+        os << "br " << loexp->reg << ", " << next_label << ", " << false_label << endl;
+
+        // loexp == 0;
+        os << false_label << ":" << endl;
+        laexp->DumpIR(os);
+        os << imm_reg1 << " = ne " << laexp->reg << ", 0" << endl;
         os << "store " << imm_reg1 << ", @" << log_name << endl;
         os << "jump " << next_label << endl;
 
