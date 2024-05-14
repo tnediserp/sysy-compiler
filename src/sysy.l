@@ -47,6 +47,9 @@ Eq            "=="|"!="
 "const"         { return CONST; }
 "if"            { return IF; }
 "else"          { return ELSE; }
+"while"         { return WHILE; }
+"break"         { return BREAK; }
+"continue"      { return CONTINUE; }
 
 {Identifier}    { yylval.str_val = new string(yytext); return IDENT; }
 {Rel}           { yylval.str_val = new string(yytext); return REL; }

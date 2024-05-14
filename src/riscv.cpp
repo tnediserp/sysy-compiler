@@ -2,7 +2,7 @@
 #include <inc/ST.hpp>
 
 map<koopa_raw_value_t, string> registers;
-Stack stack; // 记录该变量在栈中相对栈指针的偏移量
+Stack rstack; // 记录该变量在栈中相对栈指针的偏移量
 
 // 将文本形式IR转换为内存形式
 koopa_raw_program_t str2raw(const char *str)
@@ -167,8 +167,8 @@ int Stack_size(const koopa_raw_value_t &value)
     if (value->kind.tag == KOOPA_RVT_RETURN || value->kind.tag == KOOPA_RVT_INTEGER || value->kind.tag == KOOPA_RVT_STORE)
         return 0;
     // ad-hoc solution: size = 4;
-    stack.offset[value] = stack.size;
-    stack.size += 4;
+    rstack.offset[value] = rstack.size;
+    rstack.size += 4;
     return 4;
 }
 
@@ -220,7 +220,7 @@ void DumpRISC(const koopa_raw_function_t &func, ostream &os)
 
     // 计算函数所需栈的大小
     int stack_size = Stack_size(func);
-    stack_size = 16 * ((stack.size + 15) / 16); // 16字节对齐
+    stack_size = 16 * ((rstack.size + 15) / 16); // 16字节对齐
     
     // 使用 addi
     if (stack_size < 2048)
@@ -266,9 +266,9 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
             break;
         case KOOPA_RVT_BINARY: 
             DumpRISC(kind.data.binary, os);
-            offset = stack.offset[value];
+            offset = rstack.offset[value];
             if (offset < 2048)
-                os << "sw t0, " << stack.offset[value] << "(sp)" << endl;
+                os << "sw t0, " << rstack.offset[value] << "(sp)" << endl;
             
             else {
                 os << "li t1, " << offset << endl;
@@ -279,9 +279,9 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
             break;
         case KOOPA_RVT_LOAD: 
             DumpRISC(kind.data.load, os);
-            offset = stack.offset[value];
+            offset = rstack.offset[value];
             if (offset < 2048)
-                os << "sw t0, " << stack.offset[value] << "(sp)" << endl;
+                os << "sw t0, " << rstack.offset[value] << "(sp)" << endl;
             
             else {
                 os << "li t1, " << offset << endl;
@@ -327,7 +327,7 @@ void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os)
         os << "li a0, " << ret.value->kind.data.integer.value << endl;
     else 
     {
-        int offset = stack.offset[ret.value];
+        int offset = rstack.offset[ret.value];
         if (offset < 2048)
             os << "lw a0, " << offset << "(sp)" << endl;
         else 
@@ -339,7 +339,7 @@ void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os)
     }
 
     // 恢复栈指针
-    int stack_size = 16 * ((stack.size + 15) / 16);
+    int stack_size = 16 * ((rstack.size + 15) / 16);
 
     // 使用 addi
     if (stack_size < 2048)
@@ -365,9 +365,9 @@ void DumpRISC(const koopa_raw_global_alloc_t &alloc, ostream &os)
 // load
 void DumpRISC(const koopa_raw_load_t &load, ostream &os)
 {
-    int offset = stack.offset[load.src];
+    int offset = rstack.offset[load.src];
     if (offset < 2048)
-        os << "lw t0, " << stack.offset[load.src] << "(sp)" << endl;
+        os << "lw t0, " << rstack.offset[load.src] << "(sp)" << endl;
     
     else {
         os << "li t1, " << offset << endl;
@@ -381,9 +381,9 @@ void DumpRISC(const koopa_raw_load_t &load, ostream &os)
 void DumpRISC(const koopa_raw_store_t &store, ostream &os)
 {
     Load_addr_dump(store.value, "t0", os);
-    int offset = stack.offset[store.dest];
+    int offset = rstack.offset[store.dest];
     if (offset < 2048)
-        os << "sw t0, " << stack.offset[store.dest] << "(sp)" << endl;
+        os << "sw t0, " << rstack.offset[store.dest] << "(sp)" << endl;
     
     else {
         os << "li t1, " << offset << endl;
@@ -454,7 +454,7 @@ void Load_addr_dump(const koopa_raw_value_t &value, string reg, ostream &os)
     // address
     else 
     {
-        int offset = stack.offset[value];
+        int offset = rstack.offset[value];
         if (offset < 2048)
             os << "lw " << reg << ", " << offset << "(sp)" << endl;
         else 

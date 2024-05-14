@@ -6,12 +6,16 @@
 #include <cassert>
 #include <vector>
 #include <map>
+#include <stack>
 #include <inc/ST.hpp>
 using namespace std;
 
 extern ST_stack sym_table;
 extern bool eof;
 extern int if_stmt_num;
+extern int while_stmt_num;
+extern stack<int> while_stack;
+extern int while_remain_num;
 string IR_name(string ident, int num);
 string if_stmt_name(string ident, int num);
 string logic_name(string ident, int num);
@@ -369,14 +373,14 @@ public:
         exp->DumpIR(os);
         os << "br " << exp->reg << ", " << then_label << ", " << end_label << endl;
 
-        os << then_label << ":" << endl;
+        os << endl << then_label << ":" << endl;
         stmt->DumpIR(os);
         eof_then = eof;
         eof = false;
         if (!eof_then) // stmt中并没有返回，则需要输出jump
             os << "jump " << end_label << endl;
 
-        os << end_label << ":" << endl;
+        os << endl << end_label << ":" << endl;
     }
 
     void Semantic() override
@@ -414,7 +418,7 @@ public:
         exp->DumpIR(os);
         os << "br " << exp->reg << ", " << then_label << ", " << else_label << endl;
 
-        os << then_label << ":" << endl;
+        os << endl << then_label << ":" << endl;
         then_stmt->DumpIR(os);
         eof_then = eof;
         if (!eof_then) // then分支中并没有返回，则需要输出jump
@@ -423,7 +427,7 @@ public:
         }
             
         eof = false;
-        os << else_label << ":" << endl;
+        os << endl << else_label << ":" << endl;
         else_stmt->DumpIR(os);
         eof_else = eof;
         if (!eof_else) // else分支中并没有返回，则需要输出jump
@@ -433,7 +437,7 @@ public:
         if (!eof_then || !eof_else) // then或else分支没有返回，则需要输出下一个label
         {
             eof = false;
-            os << end_label << ":" << endl;
+            os << endl << end_label << ":" << endl;
         }
             
     }
@@ -444,6 +448,101 @@ public:
         exp->Semantic();
         then_stmt->Semantic();
         else_stmt->Semantic();
+    }
+};
+
+// Stmt ::= "while" "(" Exp ")" Stmt
+class Stmt2While_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> exp;
+    unique_ptr<BaseAST> stmt;
+    int while_num;
+
+    void DistriReg(int lb) override 
+    {
+        exp->DistriReg(lb);
+        stmt->DistriReg(exp->reg.num);
+        reg.num = stmt->reg.num + 1;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        string entry_label = if_stmt_name("while_entry", while_num);
+        string body_label = if_stmt_name("while_body", while_num);
+        string end_label = if_stmt_name("while_end", while_num);
+
+        os << "jump " << entry_label << endl;
+        
+        os << endl << entry_label << ":" << endl;
+        exp->DumpIR(os);
+        os << "br " << exp->reg << ", " << body_label << ", " << end_label << endl;
+
+        os << endl << body_label << ":" << endl;
+        stmt->DumpIR(os);
+        // 如果循环体中有return语句，意味着一旦进入循环就一定会返回，此时不输出jump
+        if (!eof)
+            os << "jump " << entry_label << endl;
+        eof = false; // while循环中一定不会使整个程序return.
+
+        os << endl << end_label << ":" << endl; // 这里，我们假设while循环之后一定还有语句（至少应该有return语句）
+    }
+
+    void Semantic() override
+    {
+        while_num = while_stmt_num++;
+        while_stack.push(while_num);
+        exp->Semantic();
+        stmt->Semantic();
+        while_stack.pop();
+    }
+};
+
+// Stmt ::= "break"
+class Stmt2Break_AST: public BaseAST
+{
+public: 
+    int while_num;
+
+    void DistriReg(int lb) override {}
+
+    void DumpIR(ostream &os) const override
+    {
+        string end_label = if_stmt_name("while_end", while_num);
+        os << "jump " << end_label << endl;
+
+        string remain_label = if_stmt_name("while_remain", while_remain_num++);
+        os << endl << remain_label << ":" << endl;
+    }
+
+    void Semantic() override
+    {
+        assert(!while_stack.empty()); // break出现在一个while循环中
+        while_num = while_stack.top();
+    }
+};
+
+// Stmt ::= "continue"
+class Stmt2Conti_AST: public BaseAST
+{
+public: 
+    int while_num;
+
+    void DistriReg(int lb) override {}
+
+    void DumpIR(ostream &os) const override
+    {
+        string entry_label = if_stmt_name("while_entry", while_num);
+        os << "jump " << entry_label << endl;
+
+        string remain_label = if_stmt_name("while_remain", while_remain_num++);
+        os << endl << remain_label << ":" << endl;
+    }
+
+    void Semantic() override 
+    {
+        assert(!while_stack.empty());
+        while_num = while_stack.top();
     }
 };
 
@@ -1104,13 +1203,13 @@ public:
         os << "br " << laexp->reg << ", " << true_label << ", " << next_label << endl;
 
         // laexp != 0
-        os << true_label << ":" << endl;
+        os << endl << true_label << ":" << endl;
         eexp->DumpIR(os);
         os << imm_reg1 << " = ne " << eexp->reg << ", 0" <<endl; 
         os << "store " << imm_reg1<< ", @" << log_name << endl;
         os << "jump " << next_label << endl;
 
-        os << next_label << ":" << endl;
+        os << endl << next_label << ":" << endl;
         os << reg << " = load @" << log_name << endl;
 
 /*
@@ -1206,13 +1305,13 @@ public:
         os << "br " << loexp->reg << ", " << next_label << ", " << false_label << endl;
 
         // loexp == 0;
-        os << false_label << ":" << endl;
+        os << endl << false_label << ":" << endl;
         laexp->DumpIR(os);
         os << imm_reg1 << " = ne " << laexp->reg << ", 0" << endl;
         os << "store " << imm_reg1 << ", @" << log_name << endl;
         os << "jump " << next_label << endl;
 
-        os << next_label << ":" << endl;
+        os << endl << next_label << ":" << endl;
         os << reg << " = load @" << log_name << endl;
 
 /*
