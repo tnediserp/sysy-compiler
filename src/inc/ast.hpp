@@ -124,7 +124,7 @@ public:
         block->DumpIR(os);
         // 如果没有return, 补全一条ret指令
         if (!eof)
-            os << "ret" << endl;
+            os << "ret 0" << endl;
         os << "}";
     }
 
@@ -416,15 +416,15 @@ public:
         string then_label = if_stmt_name("then", if_num);
         string else_label = if_stmt_name("else", if_num);
         string end_label = if_stmt_name("end", if_num);
-        bool eof_then, eof_else; // 记录then, else分支是否返回
+        // bool eof_then, eof_else; // 记录then, else分支是否返回
 
         exp->DumpIR(os);
         os << "br " << exp->reg << ", " << then_label << ", " << else_label << endl;
 
         os << endl << then_label << ":" << endl;
         then_stmt->DumpIR(os);
-        eof_then = eof;
-        if (!eof_then) // then分支中并没有返回，则需要输出jump
+
+        if (!eof) // then分支中并没有返回，则需要输出jump
         {
             os << "jump " << end_label << endl;
         }
@@ -432,8 +432,8 @@ public:
         eof = false;
         os << endl << else_label << ":" << endl;
         else_stmt->DumpIR(os);
-        eof_else = eof;
-        if (!eof_else) // else分支中并没有返回，则需要输出jump
+
+        if (!eof) // else分支中并没有返回，则需要输出jump
         {
             os << "jump " << end_label << endl;
         }

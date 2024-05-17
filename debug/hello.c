@@ -19,21 +19,28 @@ main /*fejfefej*/
     
     
     */
-   int x = 1000;
-   if (x == 883)
+   int x = 3;
+   if (x == 3)
+   while (x != x + 382 / x)
    {
-    while (x == 219) break;
-    return 10;
+
+   while (x == 992)
+   if (x == 2382)
+    continue;
+  else if (x == 382)
+    continue;
+  else continue;
+  continue;
+
+  while (x)
+    continue;
    }
-   
-  
-  
-  else {
-    x = 10;
-    return 100;
-  }
-  
-  // return 0;
+
+  while (x)
+    continue;
+
+    
+
   
     // return//kfkrfrk
     /*rjfrjjfrjf fjerif*/ 
