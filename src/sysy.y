@@ -201,11 +201,11 @@ Stmt
     ast->stmt = unique_ptr<BaseAST>($5);
     $$ = ast;
   }
-  | BREAK {
+  | BREAK ';' {
     auto ast = new Stmt2Break_AST();
     $$ = ast;
   }
-  | CONTINUE {
+  | CONTINUE ';' {
     auto ast = new Stmt2Conti_AST();
     $$ = ast;
   }

@@ -122,6 +122,7 @@ public:
         os << "fun @" << ident << "(): i32 {" << endl;
         os << "%" << "entry" << ":" << endl;
         block->DumpIR(os);
+        // 如果没有return, 补全一条ret指令
         if (!eof)
             os << "ret" << endl;
         os << "}";
@@ -436,11 +437,9 @@ public:
         {
             os << "jump " << end_label << endl;
         }
-        if (!eof_then || !eof_else) // then或else分支没有返回，则需要输出下一个label
-        {
-            eof = false;
-            os << endl << end_label << ":" << endl;
-        }
+
+        eof = false;
+        os << endl << end_label << ":" << endl;
             
     }
 

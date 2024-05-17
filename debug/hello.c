@@ -19,21 +19,28 @@ main /*fejfefej*/
     
     
     */
+   int x = 1000;
+   if (x == 883)
+   {
+    while (x == 219) break;
+    return 10;
+   }
    
-   int x = 120;
-    while (1)
-    {
-        x = x + 1;
-        int y = 31;
-        return x;
-    } 
-
+  
+  
+  else {
+    x = 10;
+    return 100;
+  }
+  
+  // return 0;
+  
     // return//kfkrfrk
     /*rjfrjjfrjf fjerif*/ 
     /* eieuuierwuf  jhgerirtruuwiuet
     //ierruurug ruiu
     This a random comment. I want to use it to corret the wrong answers in this program. However, this seems inpossible. .*/
-    7
+    // return 6;  
     /*nfejfnernnerf*/
     
 /*
