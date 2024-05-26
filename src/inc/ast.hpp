@@ -83,18 +83,18 @@ public:
 };
 
 
-// CompUnit ::= [CompUnit] FuncDef;
+// CompUnit ::= [CompUnit] Def;
 class CompUnitAST : public BaseAST
 {
 public:
     // 用智能指针管理对象
-    vector<unique_ptr<BaseAST>> func_defs;
+    vector<unique_ptr<BaseAST>> defs;
 
     void DistriReg(int lb) override
     {
-        for (int i = 0; i < func_defs.size(); i++)
+        for (int i = 0; i < defs.size(); i++)
         {
-            func_defs[i]->DistriReg(lb);
+            defs[i]->DistriReg(lb);
             // lb = max(func_defs[i]->reg.num, lb);
         }       
     }
@@ -111,9 +111,9 @@ public:
         os << "decl @starttime()" << endl;
         os << "decl @stoptime()" << endl << endl;
 
-        for (int i = 0; i < func_defs.size(); i++)
+        for (int i = 0; i < defs.size(); i++)
         {
-            func_defs[i]->DumpIR(os);
+            defs[i]->DumpIR(os);
             os << endl;
         }
     }
@@ -130,10 +130,62 @@ public:
         sym_table.add_item("starttime", ST_item(FUNC_VOID));
         sym_table.add_item("stoptime", ST_item(FUNC_VOID));
 
-        for (int i = 0; i < func_defs.size(); i++)
-            func_defs[i]->Semantic();
+        for (int i = 0; i < defs.size(); i++)
+            defs[i]->Semantic();
     }
 };
+
+// Def ::= FuncDef | Decl
+class Def_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> def;
+
+    void DistriReg(int lb) override 
+    {
+        def->DistriReg(lb);
+        reg.num = def->reg.num;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        def->DumpIR(os);
+    }
+
+    void Semantic() override
+    {
+        def->Semantic();
+        reg.is_var = def->reg.is_var;
+        reg.value = def->reg.value;
+    }
+};
+
+
+// GlobDecl ::= Decl
+class GlobDecl_AST: public BaseAST
+{
+public: 
+    unique_ptr<BaseAST> decl;
+
+    void DistriReg(int lb) override 
+    {
+        decl->DistriReg(lb);
+        reg.num = decl->reg.num;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        decl->DumpIR(os);
+    }
+
+    void Semantic() override
+    {
+        decl->Semantic();
+        reg.is_var = decl->reg.is_var;
+        reg.value = decl->reg.value;
+    }
+};
+
 
 // FuncDef ::= FuncType IDENT "(" [FuncFParams] ")" Block;
 class FuncDefAST : public BaseAST
@@ -1697,6 +1749,7 @@ public:
     string ident;
     string ir_name;
     unique_ptr<BaseAST> initval;
+    bool is_glob;
 
     void DistriReg(int lb) override
     {
@@ -1707,13 +1760,24 @@ public:
     void DumpIR(ostream &os) const override
     {
         initval->DumpIR(os);
-        os << "@" << ir_name <<  " = alloc i32" << endl;
-        os << "store " << initval->reg << ", @" << ir_name << endl;
+
+        if (is_glob)
+            os << "global @" << ir_name <<  " = alloc i32, " << reg.value << endl;
+        else 
+        {
+            os << "@" << ir_name <<  " = alloc i32" << endl;
+            os << "store " << initval->reg << ", @" << ir_name << endl;
+        }
+        
     }
 
     void Semantic() override
     {
         initval->Semantic();
+        
+        if (sym_table.top_num == 0) // 全局作用域
+            is_glob = true;
+        else is_glob = false;
 
         sym_table.add_item(ident, ST_item(VALUE_VARIABLE, initval->reg.value));
 
@@ -1731,6 +1795,7 @@ class VarDef_noninit_AST: public BaseAST
 public: 
     string ident;
     string ir_name;
+    bool is_glob;
     
     void DistriReg(int lb) override 
     {
@@ -1739,11 +1804,17 @@ public:
 
     void DumpIR(ostream &os) const override 
     {
-        os << "@" << ir_name <<  " = alloc i32" << endl;
+        if (is_glob)
+            os << "global @" << ir_name <<  " = alloc i32, 0" << endl;
+        else os << "@" << ir_name <<  " = alloc i32" << endl;
     }
 
     void Semantic() override
     {
+        if (sym_table.top_num == 0) // 全局作用域
+            is_glob = true;
+        else is_glob = false;
+
         sym_table.add_item(ident, ST_item(VALUE_VARIABLE, 0));
 
         reg.is_var = true;

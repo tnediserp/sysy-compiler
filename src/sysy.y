@@ -66,27 +66,30 @@ using namespace std;
 // 此时我们应该把 FuncDef 返回的结果收集起来, 作为 AST 传给调用 parser 的函数
 // $1 指代规则里第一个符号的返回值, 也就是 FuncDef 的返回值
 CompUnit
-  : UnitList FuncDef {
+  : UnitList {
     auto comp_unit = make_unique<CompUnitAST>();
+
+    cout << "here" << endl;
     
     unique_ptr<CompUnitAST> unit_1 = unique_ptr<CompUnitAST>((CompUnitAST *) $1);
 
-    comp_unit->func_defs.clear();
+    comp_unit->defs.clear();
 
     
-    for (int i = 0; i < unit_1->func_defs.size(); i++)
-      comp_unit->func_defs.push_back(move(unit_1->func_defs[i]));
+    for (int i = 0; i < unit_1->defs.size(); i++)
+      comp_unit->defs.push_back(move(unit_1->defs[i]));
       
-    comp_unit->func_defs.push_back(unique_ptr<BaseAST>($2));
+    // comp_unit->defs.push_back(unique_ptr<BaseAST>($2));
     
     ast = move(comp_unit);
-  }
+  } 
   ;
 
 UnitList
-  : {
+  : FuncDef {
     auto ast = new CompUnitAST();
-    ast->func_defs.clear();
+    ast->defs.clear();
+    ast->defs.push_back(unique_ptr<BaseAST>($1));
     $$ = ast;
   }
   | UnitList FuncDef {
@@ -94,15 +97,30 @@ UnitList
 
     unique_ptr<CompUnitAST> unit_1 = unique_ptr<CompUnitAST>((CompUnitAST *) $1);
 
-    ast->func_defs.clear();
+    ast->defs.clear();
     
-    for (int i = 0; i < unit_1->func_defs.size(); i++)
-      ast->func_defs.push_back(move(unit_1->func_defs[i]));
+    for (int i = 0; i < unit_1->defs.size(); i++)
+      ast->defs.push_back(move(unit_1->defs[i]));
       
-    ast->func_defs.push_back(unique_ptr<BaseAST>($2));
+    ast->defs.push_back(unique_ptr<BaseAST>($2));
     
     $$ = ast;
+  }
+  ;
+
+/*Def
+  : 
+  Decl {
+    auto ast = new Def_AST();
+    ast->def = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | FuncDef {
+    auto ast = new Def_AST();
+    ast->def = unique_ptr<BaseAST>($1);
+    $$ = ast;
   };
+*/
 
 // FuncDef ::= FuncType IDENT '(' ')' Block;
 // 我们这里可以直接写 '(' 和 ')', 因为之前在 lexer 里已经处理了单个字符的情况
@@ -227,7 +245,7 @@ ExpAppend
     ast->exps.push_back(unique_ptr<BaseAST>($2));
 
     $$ = ast;
-  }
+  };
 
 Block 
   : '{' BlockList '}' {
@@ -534,7 +552,7 @@ Decl
     auto ast = new Decl2Var_AST();
     ast->var_decl = unique_ptr<BaseAST>($1);
     $$ = ast;
-  }
+  };
 
 ConstDecl 
   : CONST BType ConstDefList ';' {
@@ -661,7 +679,7 @@ VarDef
     ast->ident = *unique_ptr<string>($1);
     ast->initval = unique_ptr<BaseAST>($3);
     $$ = ast;
-  }
+  };
 
 ConstInitVal 
   : ConstExp {
@@ -675,7 +693,7 @@ InitVal
     auto ast = new InitVal_AST();
     ast->exp = unique_ptr<BaseAST>($1);
     $$ = ast;
-  }
+  };
 
 LVal 
   : IDENT {
