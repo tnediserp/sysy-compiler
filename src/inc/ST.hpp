@@ -3,12 +3,22 @@
 #include<vector>
 #include<cassert>
 
+// 符号表中符号代表的可能类型
+typedef enum {
+    NO_TYPE, // 无效类型
+    VALUE_CONST, // 常数
+    VALUE_VARIABLE, // 变量
+    VALUE_ARG, // 函数参数
+    FUNC_INT, // int 函数
+    FUNC_VOID, // void 函数
+} ST_item_t;
+
 // 符号表entry
 struct ST_item {
-    bool is_var;
+    ST_item_t type;
     int value;
-
-    ST_item(bool b = true, int v = 0): is_var(b), value(v) {}
+    
+    ST_item(ST_item_t ty = NO_TYPE, int v = 0): type(ty), value(v) {}
 };
 
 // 单个block的符号表
@@ -34,8 +44,8 @@ public:
 
     ST_stack(int n=0): ttl_blks(n), top_num(n)
     {
-        if (n == 0)
-            st_stack.clear();
+        st_stack.clear();
+        push_scope(); // push进一个全局作用域
     }
 
     void push_scope()
@@ -68,14 +78,26 @@ public:
         assert(false);
     }
 
+    // 查找函数标识符
+    ST_item find_func(string ident)
+    {
+        assert(st_stack[0].num == 0);
+        map<string, ST_item>::iterator it = st_stack[0].s_table.find(ident);
+        if (it != st_stack[0].s_table.end())
+        {
+            return it->second;
+        }
+        assert(false);
+    }
+
     // 增加ident及其表项信息。
-    // 注意：添加发生在栈顶，专用于变量定义
+    // 注意：添加发生在栈顶，专用于变量定义和函数定义
     void add_item(string ident, ST_item item)
     {
         int n = st_stack.size();
         assert(n > 0);
 
-        st_stack[n-1].s_table[ident].is_var = item.is_var;
+        st_stack[n-1].s_table[ident].type = item.type;
         st_stack[n-1].s_table[ident].value = item.value;
     }
 
@@ -88,7 +110,7 @@ public:
             map<string, ST_item>::iterator it = st_stack[i].s_table.find(ident);
             if (it != st_stack[i].s_table.end())
             {
-                it->second.is_var = item.is_var;
+                it->second.type = item.type;
                 it->second.value = item.value;
                 return make_pair(it->second, st_stack[i].num);
             }

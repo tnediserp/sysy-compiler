@@ -49,12 +49,12 @@ using namespace std;
 
 // lexer 返回的所有 token 种类的声明
 // 注意 IDENT 和 INT_CONST 会返回 token 的值, 分别对应 str_val 和 int_val
-%token INT RETURN LAND LOR CONST IF ELSE WHILE BREAK CONTINUE
+%token INT RETURN LAND LOR CONST IF ELSE WHILE BREAK CONTINUE VOID
 %token <str_val> IDENT REL EQ
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp Decl ConstDecl ConstDef ConstInitVal BlockItem LVal ConstExp ConstDefList ConstDefAppend BlockList VarDecl VarDef VarDefList VarDefAppend InitVal
+%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp Decl ConstDecl ConstDef ConstInitVal BlockItem LVal ConstExp ConstDefList ConstDefAppend BlockList VarDecl VarDef VarDefList VarDefAppend InitVal FuncFParams FuncFParam FuncRParams ParaAppend ExpAppend UnitList
 %type <int_val> Number
 %type <str_val> UnaryOp BType 
 
@@ -66,12 +66,43 @@ using namespace std;
 // 此时我们应该把 FuncDef 返回的结果收集起来, 作为 AST 传给调用 parser 的函数
 // $1 指代规则里第一个符号的返回值, 也就是 FuncDef 的返回值
 CompUnit
-  : FuncDef {
+  : UnitList FuncDef {
     auto comp_unit = make_unique<CompUnitAST>();
-    comp_unit->func_def = unique_ptr<BaseAST>($1);
+    
+    unique_ptr<CompUnitAST> unit_1 = unique_ptr<CompUnitAST>((CompUnitAST *) $1);
+
+    comp_unit->func_defs.clear();
+
+    
+    for (int i = 0; i < unit_1->func_defs.size(); i++)
+      comp_unit->func_defs.push_back(move(unit_1->func_defs[i]));
+      
+    comp_unit->func_defs.push_back(unique_ptr<BaseAST>($2));
+    
     ast = move(comp_unit);
   }
   ;
+
+UnitList
+  : {
+    auto ast = new CompUnitAST();
+    ast->func_defs.clear();
+    $$ = ast;
+  }
+  | UnitList FuncDef {
+    auto ast = new CompUnitAST();
+
+    unique_ptr<CompUnitAST> unit_1 = unique_ptr<CompUnitAST>((CompUnitAST *) $1);
+
+    ast->func_defs.clear();
+    
+    for (int i = 0; i < unit_1->func_defs.size(); i++)
+      ast->func_defs.push_back(move(unit_1->func_defs[i]));
+      
+    ast->func_defs.push_back(unique_ptr<BaseAST>($2));
+    
+    $$ = ast;
+  };
 
 // FuncDef ::= FuncType IDENT '(' ')' Block;
 // 我们这里可以直接写 '(' 和 ')', 因为之前在 lexer 里已经处理了单个字符的情况
@@ -86,9 +117,18 @@ CompUnit
 FuncDef
   : FuncType IDENT '(' ')' Block {
     auto ast = new FuncDefAST();
-    ast->func_type = unique_ptr<BaseAST>($1);
+    ast->btype = unique_ptr<FuncTypeAST>((FuncTypeAST *) $1)->type;
     ast->ident = *unique_ptr<string>($2);
+    ast->func_params = unique_ptr<BaseAST>((BaseAST *) NULL);
     ast->block = unique_ptr<BaseAST>($5);
+    $$ = ast;
+  }
+  | FuncType IDENT '(' FuncFParams ')' Block {
+    auto ast = new FuncDefAST();
+    ast->btype = unique_ptr<FuncTypeAST>((FuncTypeAST *) $1)->type;
+    ast->ident = *unique_ptr<string>($2);
+    ast->func_params = unique_ptr<BaseAST>($4);
+    ast->block = unique_ptr<BaseAST>($6);
     $$ = ast;
   }
   ;
@@ -100,7 +140,94 @@ FuncType
     ast->type = "int";
     $$ = ast;
   }
+  | VOID {
+    auto ast = new FuncTypeAST();
+    ast->type = "void";
+    $$ = ast;
+  }
   ;
+
+FuncFParams
+  : ParaAppend FuncFParam {
+    auto ast = new FuncFParam_list_AST();
+    
+    unique_ptr<FuncFParam_list_AST> para_app = unique_ptr<FuncFParam_list_AST>((FuncFParam_list_AST *) $1);
+
+    ast->param_list.clear();
+    
+    for (int i = 0; i < para_app->param_list.size(); i++)
+      ast->param_list.push_back(move(para_app->param_list[i]));
+
+    ast->param_list.push_back(unique_ptr<BaseAST>($2));
+
+    $$ = ast;
+  };
+
+ParaAppend
+  : {
+    auto ast = new FuncFParam_list_AST();
+    ast->param_list.clear();
+    $$ = ast;
+  }
+  | ParaAppend FuncFParam ',' {
+    auto ast = new FuncFParam_list_AST();
+    
+    unique_ptr<FuncFParam_list_AST> para_app = unique_ptr<FuncFParam_list_AST>((FuncFParam_list_AST *) $1);
+
+    ast->param_list.clear();
+    
+    for (int i = 0; i < para_app->param_list.size(); i++)
+      ast->param_list.push_back(move(para_app->param_list[i]));
+
+    ast->param_list.push_back(unique_ptr<BaseAST>($2));
+
+    $$ = ast;
+  };
+
+FuncFParam 
+  : BType IDENT {
+    auto ast = new FuncFParam_AST();
+    ast->btype = *unique_ptr<string>($1);
+    ast->ident = *unique_ptr<string>($2);
+    $$ = ast;
+  };
+
+FuncRParams
+  : ExpAppend Exp {
+    auto ast = new FuncRParams_AST();
+    
+    unique_ptr<FuncRParams_AST> exp_app = unique_ptr<FuncRParams_AST>((FuncRParams_AST *) $1);
+
+    ast->exps.clear();
+
+    for (int i = 0; i < exp_app->exps.size(); i++)
+      ast->exps.push_back(move(exp_app->exps[i]));
+
+    ast->exps.push_back(unique_ptr<BaseAST>($2));
+
+    $$ = ast;
+  };
+
+ExpAppend 
+  : {
+    auto ast = new FuncRParams_AST();
+    ast->exps.clear();
+    $$ = ast;
+  }
+  | ExpAppend Exp ',' {
+    auto ast = new FuncRParams_AST();
+    
+    unique_ptr<FuncRParams_AST> exp_app = unique_ptr<FuncRParams_AST>((FuncRParams_AST *) $1);
+
+    ast->exps.clear();
+
+    for (int i = 0; i < exp_app->exps.size(); i++)
+      ast->exps.push_back(move(exp_app->exps[i]));
+
+    ast->exps.push_back(unique_ptr<BaseAST>($2));
+
+    $$ = ast;
+  }
 
 Block 
   : '{' BlockList '}' {
@@ -254,6 +381,25 @@ UnaryExp
     auto ast = new UExp2UOp_UExpAST();
     ast->uop = *unique_ptr<string>($1);
     ast->uexp = unique_ptr<BaseAST>($2);
+    $$ = ast;
+  }
+  | IDENT '(' ')' {
+    auto ast = new UExp2Call_AST();
+    ast->ident = *unique_ptr<string>($1);
+    ast->exps.clear();
+    $$ = ast;
+  }
+  | IDENT '(' FuncRParams ')' {
+    auto ast = new UExp2Call_AST();
+    ast->ident = *unique_ptr<string>($1);
+
+    unique_ptr<FuncRParams_AST> params = unique_ptr<FuncRParams_AST>((FuncRParams_AST *) $3);
+
+    ast->exps.clear();
+
+    for (int i = 0; i < params->exps.size(); i++)
+      ast->exps.push_back(move(params->exps[i]));
+
     $$ = ast;
   }
   ;

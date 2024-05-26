@@ -11,7 +11,7 @@
 using namespace std;
 
 extern ST_stack sym_table;
-extern bool eof;
+extern bool ret; // 是否遇到return
 extern int if_stmt_num;
 extern int while_stmt_num;
 extern stack<int> while_stack;
@@ -19,6 +19,8 @@ extern int while_remain_num;
 string IR_name(string ident, int num);
 string if_stmt_name(string ident, int num);
 string logic_name(string ident, int num);
+string func_name(string ident, int num);
+string Arg_name(string ident, int num);
 
 // 寄存器类
 class Register
@@ -81,56 +83,212 @@ public:
 };
 
 
-// CompUnit 是 BaseAST
+// CompUnit ::= [CompUnit] FuncDef;
 class CompUnitAST : public BaseAST
 {
 public:
     // 用智能指针管理对象
-    unique_ptr<BaseAST> func_def;
+    vector<unique_ptr<BaseAST>> func_defs;
 
     void DistriReg(int lb) override
     {
-        func_def->DistriReg(lb);
+        for (int i = 0; i < func_defs.size(); i++)
+        {
+            func_defs[i]->DistriReg(lb);
+            // lb = max(func_defs[i]->reg.num, lb);
+        }       
     }
 
     void DumpIR(ostream &os) const override
     {
-        func_def->DumpIR(os);
+        // 声明所有库函数
+        os << "decl @getint(): i32" << endl;
+        os << "decl @getch(): i32" << endl;
+        os << "decl @getarray(*i32): i32" << endl;
+        os << "decl @putint(i32)" << endl;
+        os << "decl @putch(i32)" << endl;
+        os << "decl @putarray(i32, *i32)" << endl;
+        os << "decl @starttime()" << endl;
+        os << "decl @stoptime()" << endl << endl;
+
+        for (int i = 0; i < func_defs.size(); i++)
+        {
+            func_defs[i]->DumpIR(os);
+            os << endl;
+        }
     }
 
     void Semantic() override 
     {
-        func_def->Semantic();
+        // 库函数
+        sym_table.add_item("getint", ST_item(FUNC_INT));
+        sym_table.add_item("getch", ST_item(FUNC_INT));
+        sym_table.add_item("getarray", ST_item(FUNC_INT));
+        sym_table.add_item("putint", ST_item(FUNC_VOID));
+        sym_table.add_item("putch", ST_item(FUNC_VOID));
+        sym_table.add_item("putarray", ST_item(FUNC_VOID));
+        sym_table.add_item("starttime", ST_item(FUNC_VOID));
+        sym_table.add_item("stoptime", ST_item(FUNC_VOID));
+
+        for (int i = 0; i < func_defs.size(); i++)
+            func_defs[i]->Semantic();
     }
 };
 
-// FuncDef 也是 BaseAST
+// FuncDef ::= FuncType IDENT "(" [FuncFParams] ")" Block;
 class FuncDefAST : public BaseAST
 {
 public:
-    unique_ptr<BaseAST> func_type;
+    // unique_ptr<BaseAST> func_type;
+    string btype;
     string ident;
+    unique_ptr<BaseAST> func_params;
     unique_ptr<BaseAST> block;
+    string ir_name;
 
     void DistriReg(int lb) override 
     {
+        if (func_params != nullptr)
+            func_params->DistriReg(lb);
+            
         block->DistriReg(lb);
     }
 
     void DumpIR(ostream &os) const override
     {
-        os << "fun @" << ident << "(): i32 {" << endl;
+        os << "fun @" << ir_name << "(";
+
+        if (func_params != nullptr)
+            func_params->DumpIR(os);
+
+        os << ")";
+        if (btype == "int")
+            os << ": i32";
+        os << " {" << endl;
         os << "%" << "entry" << ":" << endl;
+
+        ret = false;
         block->DumpIR(os);
+
         // 如果没有return, 补全一条ret指令
-        if (!eof)
-            os << "ret 0" << endl;
-        os << "}";
+        if (!ret)
+        {
+            if (btype == "void")
+                os << "ret" << endl;
+            else os << "ret 0" << endl;
+        }
+            
+        os << "}" << endl;
     }
 
     void Semantic() override 
     {
+        if (btype == "void")
+            sym_table.add_item(ident, ST_item(FUNC_VOID, 0)); // 把函数名加入全局符号表
+        else sym_table.add_item(ident, ST_item(FUNC_INT, 0));
+
+        ir_name = func_name(ident, sym_table.top_num);
+
+        sym_table.push_scope(); // 为形式参数列表创建一个新的作用域
+        if (func_params != nullptr)
+            func_params->Semantic();
         block->Semantic();
+        sym_table.pop_scope();
+    }
+};
+
+// FuncFParams ::= FuncFParam {"," FuncFParam};
+class FuncFParam_list_AST: public BaseAST
+{
+public: 
+    vector<unique_ptr<BaseAST>> param_list;
+
+    void DistriReg(int lb) override 
+    {
+        for (int i = 0; i < param_list.size(); i++)
+        {
+            param_list[i]->DistriReg(lb);
+            // 
+        }
+        reg.num = lb;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        for (int i = 0; i < param_list.size(); i++)
+        {
+            param_list[i]->DumpIR(os);
+            if (i < param_list.size() - 1)
+                os << ", ";
+        }
+    }
+
+    void Semantic() override 
+    {
+        for (int i = 0; i < param_list.size(); i++)
+        {
+            param_list[i]->Semantic();
+        }
+    }
+};
+
+// FuncFParam  ::= BType IDENT;
+class FuncFParam_AST: public BaseAST
+{
+public: 
+    string btype;
+    string ident;
+    string arg_name; // 参数名
+
+    void DistriReg(int lb) override 
+    {
+        reg.num = lb;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+
+        os << "@" << arg_name << ": i32";
+    }
+
+    void Semantic() override 
+    {
+        // 加入一个函数参数
+        sym_table.add_item(ident, ST_item(VALUE_ARG, 0));
+        arg_name = Arg_name(ident, sym_table.top_num);
+    }
+};
+
+// FuncRParams ::= Exp {"," Exp};
+class FuncRParams_AST: public BaseAST
+{
+public:
+    vector<unique_ptr<BaseAST>> exps;
+
+    void DistriReg(int lb) override 
+    {
+        for (int i = 0; i < exps.size(); i++)
+        {
+            exps[i]->DistriReg(lb);
+            lb = max(lb, exps[i]->reg.num);
+        }
+        reg.num = lb + 1;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        for (int i = 0; i < exps.size(); i++)
+        {
+            exps[i]->DumpIR(os);
+        }
+    }
+
+    void Semantic() override 
+    {
+        for (int i = 0; i < exps.size(); i++)
+        {
+            exps[i]->Semantic();
+        }
     }
 };
 
@@ -162,7 +320,7 @@ public:
     void DumpIR(ostream &os) const override
     {
         // os << "%" << "entry" << ":" << endl;
-        for (int i = 0; i < block_item.size() && !eof; i++)
+        for (int i = 0; i < block_item.size() && !ret; i++)
             block_item[i]->DumpIR(os);
     }
 
@@ -271,7 +429,7 @@ public:
         else 
             os << "ret" << endl;
         
-        eof = true; // 标志程序已经截止。
+        ret = true; // 标志函数已经返回。
     }
     void Semantic() override 
     {
@@ -300,6 +458,7 @@ public:
 
     void DumpIR(ostream &os) const override 
     {
+        lval->DumpIR(os);
         exp->DumpIR(os);
 
         // string ident = ((LVal_AST *) (lval.get()))->ident;
@@ -316,7 +475,8 @@ public:
         reg.value = exp->reg.value;
 
         // string ident = ((LVal_AST *) (lval.get()))->ident;
-        pair<ST_item, int> pr = sym_table.modify_item(ident, ST_item(true, reg.value));
+        // 能够保证，被操作的ident一定不是argument
+        pair<ST_item, int> pr = sym_table.modify_item(ident, ST_item(VALUE_VARIABLE, reg.value));
 
         ir_name = IR_name(ident, pr.second);
     }
@@ -378,8 +538,8 @@ public:
 
         os << endl << then_label << ":" << endl;
         stmt->DumpIR(os);
-        eof_then = eof;
-        eof = false;
+        eof_then = ret;
+        ret = false;
         if (!eof_then) // stmt中并没有返回，则需要输出jump
             os << "jump " << end_label << endl;
 
@@ -424,21 +584,21 @@ public:
         os << endl << then_label << ":" << endl;
         then_stmt->DumpIR(os);
 
-        if (!eof) // then分支中并没有返回，则需要输出jump
+        if (!ret) // then分支中并没有返回，则需要输出jump
         {
             os << "jump " << end_label << endl;
         }
             
-        eof = false;
+        ret = false;
         os << endl << else_label << ":" << endl;
         else_stmt->DumpIR(os);
 
-        if (!eof) // else分支中并没有返回，则需要输出jump
+        if (!ret) // else分支中并没有返回，则需要输出jump
         {
             os << "jump " << end_label << endl;
         }
 
-        eof = false;
+        ret = false;
         os << endl << end_label << ":" << endl;
             
     }
@@ -482,9 +642,9 @@ public:
         os << endl << body_label << ":" << endl;
         stmt->DumpIR(os);
         // 如果循环体中有return语句，意味着一旦进入循环就一定会返回，此时不输出jump
-        if (!eof)
+        if (!ret)
             os << "jump " << entry_label << endl;
-        eof = false; // while循环中一定不会使整个程序return.
+        ret = false; // while循环中一定不会使整个程序return.
 
         os << endl << end_label << ":" << endl; // 这里，我们假设while循环之后一定还有语句（至少应该有return语句）
     }
@@ -662,6 +822,70 @@ public:
     int Value() const override 
     {
         return lval->Value();
+    }
+};
+
+// UnaryExp ::= IDENT "(" [FuncRParams] ")"
+class UExp2Call_AST: public BaseAST
+{
+public:
+    string ident;
+    // unique_ptr<BaseAST> func_params;
+    vector<unique_ptr<BaseAST>> exps;
+    string ir_name;
+    ST_item_t func_type;
+    // vector<Register> args_regs; // 实际参数所在寄存器
+
+    void DistriReg(int lb) override
+    {
+        for (int i = 0; i < exps.size(); i++)
+        {
+            exps[i]->DistriReg(lb);
+            lb = max(lb, exps[i]->reg.num);
+        }
+        reg.num = lb + 1;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        // 为每个表达式生成IR
+        for (int i = 0; i < exps.size(); i++)
+        {
+            exps[i]->DumpIR(os);
+        }
+
+        // call @f(*, *, *, ..., *)
+        if (func_type == FUNC_INT)
+            os << reg << " = ";
+        os << "call @" << ir_name << "(";
+        
+        for (int i = 0; i < exps.size(); i++)
+        {
+            os << exps[i]->reg;
+            if (i < exps.size() - 1) 
+                os << ", ";
+        }
+
+        os << ")" << endl;
+    }
+
+    void Semantic() override 
+    {
+        reg.is_var = 1;
+        reg.value = 0;
+
+        for (int i = 0; i < exps.size(); i++)
+        {
+            exps[i]->Semantic();
+        }
+
+        // 这里应当判断调用的函数是否在符号表中，记录函数返回值类型
+        ST_item item = sym_table.find_func(ident);
+        assert(item.type == FUNC_INT || item.type == FUNC_VOID);
+        func_type = item.type;
+        // pair<ST_item, int> pr = sym_table.look_up(ident);
+        
+        ir_name = func_name(ident, 0);
     }
 };
 
@@ -1459,7 +1683,7 @@ public:
         constinitval->Semantic();
 
         assert(!constinitval->reg.is_var);
-        sym_table.add_item(ident, ST_item(false, constinitval->reg.value));
+        sym_table.add_item(ident, ST_item(VALUE_CONST, constinitval->reg.value));
 
         reg.is_var = false;
         reg.value = constinitval->reg.value;
@@ -1491,7 +1715,7 @@ public:
     {
         initval->Semantic();
 
-        sym_table.add_item(ident, ST_item(true, initval->reg.value));
+        sym_table.add_item(ident, ST_item(VALUE_VARIABLE, initval->reg.value));
 
         reg.is_var = true;
         reg.value = initval->reg.value;
@@ -1520,7 +1744,7 @@ public:
 
     void Semantic() override
     {
-        sym_table.add_item(ident, ST_item(true, 0));
+        sym_table.add_item(ident, ST_item(VALUE_VARIABLE, 0));
 
         reg.is_var = true;
         reg.value = 0;
@@ -1587,6 +1811,8 @@ class LVal_AST: public BaseAST
 public: 
     string ident;
     string ir_name;
+    bool is_arg; // 是否是函数参数
+    string arg_name; // 如果是函数参数，则存放该参数名，否则为空串
 
     void DistriReg(int lb) override
     {
@@ -1597,6 +1823,13 @@ public:
     {
         if (!reg.is_var) return;
 
+        // 如果是函数参数，先重新分配一片空间ir_name
+        if (is_arg)
+        {
+            os << "@" << ir_name << " = alloc i32" << endl;
+            os << "store @" << arg_name << ", @" << ir_name << endl;
+        }
+
         // variable: dump here
         os << reg << " = load @" << ir_name << endl;
     }
@@ -1604,10 +1837,24 @@ public:
     {
         pair<ST_item, int> pr = sym_table.look_up(ident);
         // assert(sym_table.find(ident) != sym_table.end());
-        reg.is_var = pr.first.is_var;
+        reg.is_var = (pr.first.type == VALUE_ARG) || (pr.first.type == VALUE_VARIABLE);
         reg.value = pr.first.value;
 
-        ir_name = IR_name(ident, pr.second);
+        if (pr.first.type == VALUE_ARG) // 如果发现这个lval对应是函数参数
+        {
+            // 按新变量定义的流程走一遍
+            is_arg = true;
+            sym_table.add_item(ident, ST_item(VALUE_VARIABLE, 0));
+            arg_name = Arg_name(ident, pr.second);
+            ir_name = IR_name(ident, sym_table.top_num);
+        }
+
+        else 
+        {
+            is_arg = false;
+            arg_name = "";
+            ir_name = IR_name(ident, pr.second);
+        }
     }
     int Value() const override 
     {
