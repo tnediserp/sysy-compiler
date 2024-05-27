@@ -120,6 +120,7 @@ public:
 
     void Semantic() override 
     {
+        // cout << "Semantic" << endl;
         // 库函数
         sym_table.add_item("getint", ST_item(FUNC_INT));
         sym_table.add_item("getch", ST_item(FUNC_INT));
@@ -154,38 +155,12 @@ public:
 
     void Semantic() override
     {
+        // cout << "Semantic Def" << endl;
         def->Semantic();
         reg.is_var = def->reg.is_var;
         reg.value = def->reg.value;
     }
 };
-
-
-// GlobDecl ::= Decl
-class GlobDecl_AST: public BaseAST
-{
-public: 
-    unique_ptr<BaseAST> decl;
-
-    void DistriReg(int lb) override 
-    {
-        decl->DistriReg(lb);
-        reg.num = decl->reg.num;
-    }
-
-    void DumpIR(ostream &os) const override 
-    {
-        decl->DumpIR(os);
-    }
-
-    void Semantic() override
-    {
-        decl->Semantic();
-        reg.is_var = decl->reg.is_var;
-        reg.value = decl->reg.value;
-    }
-};
-
 
 // FuncDef ::= FuncType IDENT "(" [FuncFParams] ")" Block;
 class FuncDefAST : public BaseAST
@@ -235,17 +210,21 @@ public:
 
     void Semantic() override 
     {
+        // cout << "Semantic FuncDef" << endl;
         if (btype == "void")
             sym_table.add_item(ident, ST_item(FUNC_VOID, 0)); // 把函数名加入全局符号表
         else sym_table.add_item(ident, ST_item(FUNC_INT, 0));
 
         ir_name = func_name(ident, sym_table.top_num);
+        // cout << "func_name" << ir_name << endl;
 
         sym_table.push_scope(); // 为形式参数列表创建一个新的作用域
         if (func_params != nullptr)
             func_params->Semantic();
         block->Semantic();
         sym_table.pop_scope();
+
+        // cout << "Semantic FuncDef end" << endl;
     }
 };
 
@@ -277,6 +256,7 @@ public:
 
     void Semantic() override 
     {
+        // cout << "Semantic FuncFParams" << endl;
         for (int i = 0; i < param_list.size(); i++)
         {
             param_list[i]->Semantic();
@@ -305,6 +285,7 @@ public:
 
     void Semantic() override 
     {
+        // cout << "Semantic FuncFParam" << endl;
         // 加入一个函数参数
         sym_table.add_item(ident, ST_item(VALUE_ARG, 0));
         arg_name = Arg_name(ident, sym_table.top_num);
@@ -337,6 +318,7 @@ public:
 
     void Semantic() override 
     {
+        // cout << "Semantic FuncRParams" << endl;
         for (int i = 0; i < exps.size(); i++)
         {
             exps[i]->Semantic();
@@ -919,13 +901,14 @@ public:
         }
 
         os << ")" << endl;
+
+        if (func_type == FUNC_VOID)
+            os << reg << " = add 0, 0" << endl;
     }
 
     void Semantic() override 
     {
-        reg.is_var = 1;
-        reg.value = 0;
-
+        // cout << "Semantic Call" << endl;
         for (int i = 0; i < exps.size(); i++)
         {
             exps[i]->Semantic();
@@ -936,8 +919,13 @@ public:
         assert(item.type == FUNC_INT || item.type == FUNC_VOID);
         func_type = item.type;
         // pair<ST_item, int> pr = sym_table.look_up(ident);
+
+
+        reg.is_var = 1;
+        reg.value = 0;
         
         ir_name = func_name(ident, 0);
+        // cout << "IR_name" << ir_name << endl;
     }
 };
 
@@ -1098,11 +1086,21 @@ public:
         if (op == "*")
             reg.value = mexp->reg.value * uexp->reg.value;
         
+        // 需要判断除数不为0 （短路求值会用到）
         else if (op == "/")
-            reg.value = mexp->reg.value / uexp->reg.value;
+        {
+            if (uexp->reg.value == 0)
+                reg.value = 0;
+            else reg.value = mexp->reg.value / uexp->reg.value;
+        }
+            
 
         else // if (op == "%")
-            reg.value = mexp->reg.value % uexp->reg.value;
+        {
+            if (uexp->reg.value == 0)
+                reg.value = 0;
+            else reg.value = mexp->reg.value % uexp->reg.value;
+        }
     }
 
     int Value() const override 
@@ -1680,6 +1678,7 @@ public:
     void DumpIR(ostream &os) const override { /* do nothing. */ }
     void Semantic() override 
     {
+        // cout << "Semantic ConstDecl" << endl;
         for (int i = 0; i < constdefs.size(); i++)
             constdefs[i]->Semantic();
     }
@@ -1710,6 +1709,7 @@ public:
 
     void Semantic() override 
     {
+        // cout << "Semantic VarDecl" << endl;
         for (int i = 0; i < vardefs.size(); i++)
             vardefs[i]->Semantic();
     }

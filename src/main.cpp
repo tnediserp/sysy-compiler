@@ -48,6 +48,8 @@ int main(int argc, const char *argv[]) {
     assert(!ret);
 
     ast->Semantic();
+
+    // cout << "semantic success" << endl;
     ast->DistriReg(0);
 
     // 根据mode决定生成何种形式文件
@@ -58,6 +60,8 @@ int main(int argc, const char *argv[]) {
         yyout.open(output);
         ast->DumpIR(yyout);
         yyout.close();
+
+        // ast->DumpIR(cout);
     }
     
     // 目标代码

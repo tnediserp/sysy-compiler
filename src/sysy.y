@@ -54,9 +54,9 @@ using namespace std;
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp Decl ConstDecl ConstDef ConstInitVal BlockItem LVal ConstExp ConstDefList ConstDefAppend BlockList VarDecl VarDef VarDefList VarDefAppend InitVal FuncFParams FuncFParam FuncRParams ParaAppend ExpAppend UnitList
+%type <ast_val> FuncDef  Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp Decl ConstDecl ConstDef ConstInitVal BlockItem LVal ConstExp ConstDefList BlockList VarDecl VarDef VarDefList InitVal FuncFParams FuncFParam FuncRParams UnitList Def
 %type <int_val> Number
-%type <str_val> UnaryOp BType 
+%type <str_val> UnaryOp BType FuncType
 
 %%
 
@@ -68,8 +68,6 @@ using namespace std;
 CompUnit
   : UnitList {
     auto comp_unit = make_unique<CompUnitAST>();
-
-    cout << "here" << endl;
     
     unique_ptr<CompUnitAST> unit_1 = unique_ptr<CompUnitAST>((CompUnitAST *) $1);
 
@@ -86,13 +84,13 @@ CompUnit
   ;
 
 UnitList
-  : FuncDef {
+  : Def {
     auto ast = new CompUnitAST();
     ast->defs.clear();
     ast->defs.push_back(unique_ptr<BaseAST>($1));
     $$ = ast;
   }
-  | UnitList FuncDef {
+  | UnitList Def {
     auto ast = new CompUnitAST();
 
     unique_ptr<CompUnitAST> unit_1 = unique_ptr<CompUnitAST>((CompUnitAST *) $1);
@@ -108,7 +106,7 @@ UnitList
   }
   ;
 
-/*Def
+Def
   : 
   Decl {
     auto ast = new Def_AST();
@@ -120,7 +118,7 @@ UnitList
     ast->def = unique_ptr<BaseAST>($1);
     $$ = ast;
   };
-*/
+
 
 // FuncDef ::= FuncType IDENT '(' ')' Block;
 // 我们这里可以直接写 '(' 和 ')', 因为之前在 lexer 里已经处理了单个字符的情况
@@ -132,10 +130,11 @@ UnitList
 // 否则会发生内存泄漏, 而 unique_ptr 这种智能指针可以自动帮我们 delete
 // 虽然此处你看不出用 unique_ptr 和手动 delete 的区别, 但当我们定义了 AST 之后
 // 这种写法会省下很多内存管理的负担
+
 FuncDef
   : FuncType IDENT '(' ')' Block {
     auto ast = new FuncDefAST();
-    ast->btype = unique_ptr<FuncTypeAST>((FuncTypeAST *) $1)->type;
+    ast->btype = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
     ast->func_params = unique_ptr<BaseAST>((BaseAST *) NULL);
     ast->block = unique_ptr<BaseAST>($5);
@@ -143,51 +142,33 @@ FuncDef
   }
   | FuncType IDENT '(' FuncFParams ')' Block {
     auto ast = new FuncDefAST();
-    ast->btype = unique_ptr<FuncTypeAST>((FuncTypeAST *) $1)->type;
+    ast->btype = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
     ast->func_params = unique_ptr<BaseAST>($4);
     ast->block = unique_ptr<BaseAST>($6);
     $$ = ast;
-  }
-  ;
+  };
 
 // 同上, 不再解释
 FuncType
   : INT {
-    auto ast = new FuncTypeAST();
-    ast->type = "int";
+    auto ast = new string("int");
     $$ = ast;
   }
   | VOID {
-    auto ast = new FuncTypeAST();
-    ast->type = "void";
+    auto ast = new string("void");
     $$ = ast;
   }
   ;
 
 FuncFParams
-  : ParaAppend FuncFParam {
-    auto ast = new FuncFParam_list_AST();
-    
-    unique_ptr<FuncFParam_list_AST> para_app = unique_ptr<FuncFParam_list_AST>((FuncFParam_list_AST *) $1);
-
-    ast->param_list.clear();
-    
-    for (int i = 0; i < para_app->param_list.size(); i++)
-      ast->param_list.push_back(move(para_app->param_list[i]));
-
-    ast->param_list.push_back(unique_ptr<BaseAST>($2));
-
-    $$ = ast;
-  };
-
-ParaAppend
-  : {
+  : FuncFParam {
     auto ast = new FuncFParam_list_AST();
     ast->param_list.clear();
+    ast->param_list.push_back(unique_ptr<BaseAST>($1));
     $$ = ast;
   }
-  | ParaAppend FuncFParam ',' {
+  | FuncFParams ',' FuncFParam {
     auto ast = new FuncFParam_list_AST();
     
     unique_ptr<FuncFParam_list_AST> para_app = unique_ptr<FuncFParam_list_AST>((FuncFParam_list_AST *) $1);
@@ -197,7 +178,7 @@ ParaAppend
     for (int i = 0; i < para_app->param_list.size(); i++)
       ast->param_list.push_back(move(para_app->param_list[i]));
 
-    ast->param_list.push_back(unique_ptr<BaseAST>($2));
+    ast->param_list.push_back(unique_ptr<BaseAST>($3));
 
     $$ = ast;
   };
@@ -211,28 +192,13 @@ FuncFParam
   };
 
 FuncRParams
-  : ExpAppend Exp {
-    auto ast = new FuncRParams_AST();
-    
-    unique_ptr<FuncRParams_AST> exp_app = unique_ptr<FuncRParams_AST>((FuncRParams_AST *) $1);
-
-    ast->exps.clear();
-
-    for (int i = 0; i < exp_app->exps.size(); i++)
-      ast->exps.push_back(move(exp_app->exps[i]));
-
-    ast->exps.push_back(unique_ptr<BaseAST>($2));
-
-    $$ = ast;
-  };
-
-ExpAppend 
-  : {
+  : Exp {
     auto ast = new FuncRParams_AST();
     ast->exps.clear();
+    ast->exps.push_back(unique_ptr<BaseAST>($1));
     $$ = ast;
   }
-  | ExpAppend Exp ',' {
+  | FuncRParams ',' Exp {
     auto ast = new FuncRParams_AST();
     
     unique_ptr<FuncRParams_AST> exp_app = unique_ptr<FuncRParams_AST>((FuncRParams_AST *) $1);
@@ -242,7 +208,7 @@ ExpAppend
     for (int i = 0; i < exp_app->exps.size(); i++)
       ast->exps.push_back(move(exp_app->exps[i]));
 
-    ast->exps.push_back(unique_ptr<BaseAST>($2));
+    ast->exps.push_back(unique_ptr<BaseAST>($3));
 
     $$ = ast;
   };
@@ -555,9 +521,9 @@ Decl
   };
 
 ConstDecl 
-  : CONST BType ConstDefList ';' {
+  : CONST FuncType ConstDefList ';' {
     auto ast = new ConstDecl_AST();
-    ast->btype = *unique_ptr<string>($2);
+    ast->btype = *unique_ptr<string>($2);;
     
     unique_ptr<ConstDecl_AST> def_list = unique_ptr<ConstDecl_AST>((ConstDecl_AST *) $3);
     ast->constdefs.clear();
@@ -570,27 +536,13 @@ ConstDecl
   };
 
 ConstDefList
-  : ConstDefAppend ConstDef {
-    auto ast = new ConstDecl_AST();
-    unique_ptr<ConstDecl_AST> def_app = unique_ptr<ConstDecl_AST>((ConstDecl_AST *) $1);
-    
-    ast->constdefs.clear();
-    
-    for (int i = 0; i < def_app->constdefs.size(); i++)
-      ast->constdefs.push_back(move(def_app->constdefs[i]));
-      
-    ast->constdefs.push_back(unique_ptr<BaseAST>($2));
-    
-    $$ = ast;
-  };
-
-ConstDefAppend 
-  : {
+  : ConstDef {
     auto ast = new ConstDecl_AST();
     ast->constdefs.clear();
+    ast->constdefs.push_back(unique_ptr<BaseAST>($1));
     $$ = ast;
   }
-  | ConstDefAppend ConstDef ',' {
+  | ConstDefList ',' ConstDef {
     auto ast = new ConstDecl_AST();
     unique_ptr<ConstDecl_AST> def_app = unique_ptr<ConstDecl_AST>((ConstDecl_AST *) $1);
     
@@ -599,13 +551,13 @@ ConstDefAppend
     for (int i = 0; i < def_app->constdefs.size(); i++)
       ast->constdefs.push_back(move(def_app->constdefs[i]));
       
-    ast->constdefs.push_back(unique_ptr<BaseAST>($2));
+    ast->constdefs.push_back(unique_ptr<BaseAST>($3));
     
     $$ = ast;
   };
 
 VarDecl 
-  : BType VarDefList ';' {
+  : FuncType VarDefList ';' {
     auto ast = new VarDecl_AST();
     ast->btype = *unique_ptr<string>($1);
     
@@ -620,27 +572,13 @@ VarDecl
   };
 
 VarDefList
-  : VarDefAppend VarDef {
-    auto ast = new VarDecl_AST();
-    unique_ptr<VarDecl_AST> def_app = unique_ptr<VarDecl_AST>((VarDecl_AST *) $1);
-    
-    ast->vardefs.clear();
-    
-    for (int i = 0; i < def_app->vardefs.size(); i++)
-      ast->vardefs.push_back(move(def_app->vardefs[i]));
-      
-    ast->vardefs.push_back(unique_ptr<BaseAST>($2));
-    
-    $$ = ast;
-  };
-
-VarDefAppend 
-  : {
+  : VarDef {
     auto ast = new VarDecl_AST();
     ast->vardefs.clear();
+    ast->vardefs.push_back(unique_ptr<BaseAST>($1));
     $$ = ast;
   }
-  | VarDefAppend VarDef ',' {
+  | VarDefList ',' VarDef {
     auto ast = new VarDecl_AST();
     unique_ptr<VarDecl_AST> def_app = unique_ptr<VarDecl_AST>((VarDecl_AST *) $1);
     
@@ -649,7 +587,7 @@ VarDefAppend
     for (int i = 0; i < def_app->vardefs.size(); i++)
       ast->vardefs.push_back(move(def_app->vardefs[i]));
       
-    ast->vardefs.push_back(unique_ptr<BaseAST>($2));
+    ast->vardefs.push_back(unique_ptr<BaseAST>($3));
     
     $$ = ast;
   };
