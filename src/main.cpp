@@ -48,8 +48,6 @@ int main(int argc, const char *argv[]) {
     assert(!ret);
 
     ast->Semantic();
-
-    // cout << "semantic success" << endl;
     ast->DistriReg(0);
 
     // 根据mode决定生成何种形式文件

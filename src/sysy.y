@@ -137,6 +137,7 @@ FuncDef
     ast->btype = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
     ast->func_params = unique_ptr<BaseAST>((BaseAST *) NULL);
+    ast->arg_names.clear();
     ast->block = unique_ptr<BaseAST>($5);
     $$ = ast;
   }
@@ -145,6 +146,12 @@ FuncDef
     ast->btype = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
     ast->func_params = unique_ptr<BaseAST>($4);
+
+    ast->arg_names.clear();
+    FuncFParam_list_AST *para_app = (FuncFParam_list_AST *) $4;
+    for (int i = 0; i < para_app->param_list.size(); i++)
+      ast->arg_names.push_back(para_app->arg_names[i]);
+
     ast->block = unique_ptr<BaseAST>($6);
     $$ = ast;
   };
@@ -166,6 +173,9 @@ FuncFParams
     auto ast = new FuncFParam_list_AST();
     ast->param_list.clear();
     ast->param_list.push_back(unique_ptr<BaseAST>($1));
+
+    ast->arg_names.clear();
+    ast->arg_names.push_back(((FuncFParam_AST *)$1)->ident);
     $$ = ast;
   }
   | FuncFParams ',' FuncFParam {
@@ -174,11 +184,16 @@ FuncFParams
     unique_ptr<FuncFParam_list_AST> para_app = unique_ptr<FuncFParam_list_AST>((FuncFParam_list_AST *) $1);
 
     ast->param_list.clear();
+    ast->arg_names.clear();
     
     for (int i = 0; i < para_app->param_list.size(); i++)
+    {
       ast->param_list.push_back(move(para_app->param_list[i]));
-
+      ast->arg_names.push_back(para_app->arg_names[i]);
+    }
+      
     ast->param_list.push_back(unique_ptr<BaseAST>($3));
+    ast->arg_names.push_back(((FuncFParam_AST *)$3)->ident);
 
     $$ = ast;
   };

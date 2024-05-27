@@ -1,25 +1,19 @@
-int fib(int n) {
-  if (n <= 2) {
-    return 1;
-  } else {
-    return fib(n - 1) + fib(n - 2);
-  }
+int fun(int m,int n){
+	int rem;			
+	while(n > 0){
+		rem = m % n;
+		m = n;
+		n = rem;
+	}
+	return m;				
 }
+int main(){
+	int n,m;
+	int num;
+	m=getint();
+	n=getint();
+	num=fun(m,n);
+	putint(num);
 
-int x, y, z=90;
-
-void fh(int x, int y, int z)
-{
-    x = 129;
-    y = 119;
-    z = 483;
-    return;
-}
-
-int main() {
-int fib = 100;
-  int input = getint();
-  int k;
-  if (1 && 5/0)
-    k=fh(x, y, z);
+	return 0; 
 }

@@ -170,8 +170,10 @@ public:
     string btype;
     string ident;
     unique_ptr<BaseAST> func_params;
+    vector<string> arg_names; // 参数名
     unique_ptr<BaseAST> block;
     string ir_name;
+    int scope_num;
 
     void DistriReg(int lb) override 
     {
@@ -195,6 +197,16 @@ public:
         os << "%" << "entry" << ":" << endl;
 
         ret = false;
+
+        // 为参数分配实际地址空间
+        for (int i = 0; i < arg_names.size(); i++)
+        {
+            string var_name = IR_name(arg_names[i], scope_num);
+            string arg_name = Arg_name(arg_names[i], scope_num);
+            os << "@" << var_name << " = alloc i32" << endl;
+            os << "store @" << arg_name << ", @" << var_name << endl;
+        }
+
         block->DumpIR(os);
 
         // 如果没有return, 补全一条ret指令
@@ -219,8 +231,19 @@ public:
         // cout << "func_name" << ir_name << endl;
 
         sym_table.push_scope(); // 为形式参数列表创建一个新的作用域
+        scope_num = sym_table.top_num;
+
+        // cout << "begin block" << endl;
+
         if (func_params != nullptr)
             func_params->Semantic();
+
+        // 形式参数分配实际地址空间
+        for (int i = 0; i < arg_names.size(); i++)
+        {
+            sym_table.add_item(arg_names[i], ST_item(VALUE_VARIABLE, 0));
+        }
+
         block->Semantic();
         sym_table.pop_scope();
 
@@ -233,6 +256,7 @@ class FuncFParam_list_AST: public BaseAST
 {
 public: 
     vector<unique_ptr<BaseAST>> param_list;
+    vector<string> arg_names;
 
     void DistriReg(int lb) override 
     {
@@ -256,7 +280,6 @@ public:
 
     void Semantic() override 
     {
-        // cout << "Semantic FuncFParams" << endl;
         for (int i = 0; i < param_list.size(); i++)
         {
             param_list[i]->Semantic();
@@ -1882,8 +1905,8 @@ class LVal_AST: public BaseAST
 public: 
     string ident;
     string ir_name;
-    bool is_arg; // 是否是函数参数
-    string arg_name; // 如果是函数参数，则存放该参数名，否则为空串
+    // bool is_arg; // 是否是函数参数
+    // string arg_name; // 如果是函数参数，则存放该参数名，否则为空串
 
     void DistriReg(int lb) override
     {
@@ -1894,12 +1917,14 @@ public:
     {
         if (!reg.is_var) return;
 
+/*
         // 如果是函数参数，先重新分配一片空间ir_name
         if (is_arg)
         {
             os << "@" << ir_name << " = alloc i32" << endl;
             os << "store @" << arg_name << ", @" << ir_name << endl;
         }
+*/
 
         // variable: dump here
         os << reg << " = load @" << ir_name << endl;
@@ -1913,17 +1938,21 @@ public:
 
         if (pr.first.type == VALUE_ARG) // 如果发现这个lval对应是函数参数
         {
+            assert(false);
+            /*
             // 按新变量定义的流程走一遍
             is_arg = true;
             sym_table.add_item(ident, ST_item(VALUE_VARIABLE, 0));
             arg_name = Arg_name(ident, pr.second);
             ir_name = IR_name(ident, sym_table.top_num);
+            */
         }
+
 
         else 
         {
-            is_arg = false;
-            arg_name = "";
+            // is_arg = false;
+            // arg_name = "";
             ir_name = IR_name(ident, pr.second);
         }
     }
