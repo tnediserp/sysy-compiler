@@ -3,6 +3,7 @@
 
 map<koopa_raw_value_t, string> registers;
 Stack rstack; // 记录该变量在栈中相对栈指针的偏移量
+map<koopa_raw_value_t, string> glob_data; // 储存全局变量名
 
 // 将文本形式IR转换为内存形式
 koopa_raw_program_t str2raw(const char *str)
@@ -151,6 +152,17 @@ int Stack_size(const koopa_raw_slice_t &slice)
 // 计算函数需要的栈空间
 int Stack_size(const koopa_raw_function_t &func)
 {
+    // 清空栈帧
+    rstack.clear();
+    // 首先给函数参数分配栈空间
+    for (int i = 0; i < func->params.len; i++)
+    {
+        koopa_raw_value_t value = reinterpret_cast<koopa_raw_value_t>(func->params.buffer[i]);
+
+        rstack.S_offset[value] = -4*i - 4;
+        // S_size不需要+1，因为参数存在上一个函数（调用者）的栈帧中
+    }
+
     return Stack_size(func->bbs);
 }
 
@@ -160,15 +172,25 @@ int Stack_size(const koopa_raw_basic_block_t &bb)
     return Stack_size(bb->insts);
 }
 
-// 计算指令需要的栈空间，并为该条指令在栈上分配一个位置
+// 计算指令需要的局部变量空间，并为该条指令在栈上分配一个位置
+// 如果是call 指令，更新A_size
 int Stack_size(const koopa_raw_value_t &value)
 {   
     // 不需要栈空间的情形
-    if (value->kind.tag == KOOPA_RVT_RETURN || value->kind.tag == KOOPA_RVT_INTEGER || value->kind.tag == KOOPA_RVT_STORE)
+    if (value->kind.tag == KOOPA_RVT_RETURN || value->kind.tag == KOOPA_RVT_INTEGER || value->kind.tag == KOOPA_RVT_STORE || value->kind.tag == KOOPA_RVT_JUMP || value->kind.tag == KOOPA_RVT_BRANCH)
         return 0;
     // ad-hoc solution: size = 4;
-    rstack.offset[value] = rstack.size;
-    rstack.size += 4;
+    rstack.S_offset[value] = rstack.S_size;
+    rstack.S_size += 4;
+
+    // 如果是call指令，根据参数个数更新A_size
+    if (value->kind.tag == KOOPA_RVT_CALL)
+    {
+        int arg_num = value->kind.data.call.args.len;
+        rstack.A_size = 4 * max(rstack.A_size, arg_num - 8);
+        rstack.R_size = 4;
+        // return 4; // %1 = call f()
+    }
     return 4;
 }
 
@@ -176,7 +198,7 @@ int Stack_size(const koopa_raw_value_t &value)
 // 访问 raw program
 void DumpRISC(const koopa_raw_program_t &program, ostream &os)
 {
-    os << ".text" << endl;
+    // os << ".text" << endl;
 
     DumpRISC(program.values, os);
     // 访问所有函数
@@ -212,15 +234,33 @@ void DumpRISC(const koopa_raw_slice_t &slice, ostream &os)
     }
 }
 
+// 访问全局变量
+void DumpRISC(const koopa_raw_global_alloc_t &alloc, const koopa_raw_value_t &value, ostream &os)
+{
+    int num = glob_data.size();
+    string name = "var_" + to_string(num);
+    glob_data[value] = name;
+
+    os << ".data" << endl;
+    os << ".globl " << name << endl;
+    os << name << ":" << endl;
+    os << ".word " << alloc.init->kind.data.integer.value << endl << endl;
+}
+
 // 访问函数
 void DumpRISC(const koopa_raw_function_t &func, ostream &os)
 {
+    // 跳过库函数声明
+    if (func->bbs.len == 0) 
+        return;
+    
+    os << ".text" << endl;
     os << ".globl " << 1 + func->name << endl;
     os << 1 + func->name << ":" << endl;
 
     // 计算函数所需栈的大小
     int stack_size = Stack_size(func);
-    stack_size = 16 * ((rstack.size + 15) / 16); // 16字节对齐
+    stack_size = rstack.Align(); // 16字节对齐
     
     // 使用 addi
     if (stack_size < 2048)
@@ -231,6 +271,13 @@ void DumpRISC(const koopa_raw_function_t &func, ostream &os)
     {
         os << "li t0, " << -stack_size << endl;
         os << "add sp, sp, t0" << endl;
+    }
+
+    // 储存ra寄存器
+    if (rstack.R_size != 0)
+    {
+        int ra_pos = rstack.size - 4;
+        Store_addr_dump(ra_pos, "ra", os);
     }
 
     DumpRISC(func->bbs, os);
@@ -252,7 +299,6 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
 {
     // 根据指令类型判断后续需要如何访问
     const auto &kind = value->kind;
-    int offset;
     switch (kind.tag) 
     {
         case KOOPA_RVT_RETURN:
@@ -266,28 +312,12 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
             break;
         case KOOPA_RVT_BINARY: 
             DumpRISC(kind.data.binary, os);
-            offset = rstack.offset[value];
-            if (offset < 2048)
-                os << "sw t0, " << rstack.offset[value] << "(sp)" << endl;
-            
-            else {
-                os << "li t1, " << offset << endl;
-                os << "add t1, t1, sp" << endl;
-                os << "sw t0, 0(t1)" << endl;
-            }
+            Store_addr_dump(value, "t0", os);
             os << endl;
             break;
         case KOOPA_RVT_LOAD: 
             DumpRISC(kind.data.load, os);
-            offset = rstack.offset[value];
-            if (offset < 2048)
-                os << "sw t0, " << rstack.offset[value] << "(sp)" << endl;
-            
-            else {
-                os << "li t1, " << offset << endl;
-                os << "add t1, t1, sp" << endl;
-                os << "sw t0, 0(t1)" << endl;
-            }
+            Store_addr_dump(value, "t0", os);
             os << endl;
             break;
         case KOOPA_RVT_STORE: 
@@ -295,7 +325,7 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
             os << endl;
             break;
         case KOOPA_RVT_ALLOC:
-            DumpRISC(kind.data.global_alloc, os);
+            // DumpRISC(kind.data.global_alloc, os);
             break;
         case KOOPA_RVT_BRANCH: 
             DumpRISC(kind.data.branch, os);
@@ -304,6 +334,14 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
         case KOOPA_RVT_JUMP:
             DumpRISC(kind.data.jump, os);
             os << endl;
+            break;
+        case KOOPA_RVT_CALL:
+            DumpRISC(kind.data.call, os);
+            Store_addr_dump(value, "a0", os);
+            os << endl;
+            break;
+        case KOOPA_RVT_GLOBAL_ALLOC:
+            DumpRISC(kind.data.global_alloc, value, os);
             break;
         default:
             // 其他类型暂时遇不到
@@ -323,19 +361,17 @@ void DumpRISC(const koopa_raw_integer_t &integer, ostream &os)
 // ret 
 void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os)
 {
-    if (ret.value->kind.tag == KOOPA_RVT_INTEGER)
-        os << "li a0, " << ret.value->kind.data.integer.value << endl;
-    else 
+    // 若有返回值，加载到a0中
+    if (ret.value != NULL)
     {
-        int offset = rstack.offset[ret.value];
-        if (offset < 2048)
-            os << "lw a0, " << offset << "(sp)" << endl;
-        else 
-        {
-            os << "li t1, " << offset << endl;
-            os << "add t1, t1, sp" << endl;
-            os << "lw a0, 0(t1)" << endl;
-        }
+        Load_addr_dump(ret.value, "a0", os);
+    }
+    
+    // 恢复ra寄存器
+    if (rstack.R_size != 0)
+    {
+        int ra_pos = rstack.size - 4;
+        Load_addr_dump(ra_pos, "ra", os);
     }
 
     // 恢复栈指针
@@ -355,25 +391,10 @@ void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os)
     os << "ret" << endl;
 }
 
-// alloc
-void DumpRISC(const koopa_raw_global_alloc_t &alloc, ostream &os)
-{
-    // do nothing.
-    return;
-}
-
 // load
 void DumpRISC(const koopa_raw_load_t &load, ostream &os)
 {
-    int offset = rstack.offset[load.src];
-    if (offset < 2048)
-        os << "lw t0, " << rstack.offset[load.src] << "(sp)" << endl;
-    
-    else {
-        os << "li t1, " << offset << endl;
-        os << "add t1, t1, sp" << endl;
-        os << "lw t0, 0(t1)" << endl;
-    }
+    Load_addr_dump(load.src, "t0", os);
     // os << "sw t0, " << stack.offset[value] << endl;
 }
 
@@ -381,15 +402,7 @@ void DumpRISC(const koopa_raw_load_t &load, ostream &os)
 void DumpRISC(const koopa_raw_store_t &store, ostream &os)
 {
     Load_addr_dump(store.value, "t0", os);
-    int offset = rstack.offset[store.dest];
-    if (offset < 2048)
-        os << "sw t0, " << rstack.offset[store.dest] << "(sp)" << endl;
-    
-    else {
-        os << "li t1, " << offset << endl;
-        os << "add t1, t1, sp" << endl;
-        os << "sw t0, 0(t1)" << endl;
-    }
+    Store_addr_dump(store.dest, "t0", os);
 }
 
 // branch
@@ -404,6 +417,34 @@ void DumpRISC(const koopa_raw_branch_t &branch, ostream &os)
 void DumpRISC(const koopa_raw_jump_t &jump, ostream &os)
 {
     os << "j " << jump.target->name + 1 << endl;
+}
+
+// call
+void DumpRISC(const koopa_raw_call_t &call, ostream &os)
+{
+    for (int i = 0; i < call.args.len; i++)
+    {
+        koopa_raw_value_t value = reinterpret_cast<koopa_raw_value_t>(call.args.buffer[i]);
+
+        // 前8个参数load到寄存器a0-a7中
+        if (i < 8)
+        {
+            string reg = "a" + to_string(i);
+            Load_addr_dump(value, reg, os);
+        }
+
+        // 后面的寄存器放在栈帧上，相当于一次store
+        else 
+        {
+            Load_addr_dump(value, "t0", os);
+            int offset = (i - 8) * 4;
+            Store_addr_dump(offset, "t0", os);
+        }
+    }
+
+    os << "call " << call.callee->name + 1 << endl;
+
+    // 把返回值保存到call指令对应的内存中
 }
 
 // 检查指令是否已分配寄存器
@@ -451,20 +492,68 @@ void Load_addr_dump(const koopa_raw_value_t &value, string reg, ostream &os)
     if (value->kind.tag == KOOPA_RVT_INTEGER)
         os << "li " << reg << ", " << value->kind.data.integer.value << endl;
 
+    // global variable
+    else if (value->kind.tag == KOOPA_RVT_GLOBAL_ALLOC)
+    {
+        os << "la t1, " << glob_data[value] << endl;
+        os << "lw " << reg << ", 0(t1)" << endl;
+    }
+        
     // address
     else 
     {
-        int offset = rstack.offset[value];
-        if (offset < 2048)
-            os << "lw " << reg << ", " << offset << "(sp)" << endl;
-        else 
-        {
-            os << "li t1, " << offset << endl;
-            os << "add t1, t1, sp" << endl;
-            os << "lw " << reg << ", 0(t1)" << endl;
-        }
+        int offset = rstack.Offset(value);
+        Load_addr_dump(offset, reg, os);
+    }       
+}
+
+// 把reg的内容store到value对应的地址中
+void Store_addr_dump(const koopa_raw_value_t &value, string reg, ostream &os)
+{
+    if (value->kind.tag == KOOPA_RVT_GLOBAL_ALLOC)
+    {
+        os << "la t1, " << glob_data[value] << endl;
+        os << "sw " << reg << ", 0(t1)" << endl;
     }
-        
+
+    else 
+    {
+        int offset = rstack.Offset(value);
+        Store_addr_dump(offset, reg, os);
+    }
+}
+
+// 把地址sp + offset中的内容load到寄存器reg中
+void Load_addr_dump(int offset, string reg, ostream &os)
+{
+    // value是函数参数，存在寄存器中
+    if (offset < 0)
+    {
+        os << "mv " << reg << ", " << "a" << -offset / 4 - 1 << endl;
+    }
+
+    // 不在寄存器中
+    else if (offset < 2048)
+        os << "lw " << reg << ", " << offset << "(sp)" << endl;
+    else 
+    {
+        os << "li t1, " << offset << endl;
+        os << "add t1, t1, sp" << endl;
+        os << "lw " << reg << ", 0(t1)" << endl;
+    }
+}
+
+// 把寄存器reg中的内容store到地址sp + offset中
+void Store_addr_dump(int offset, string reg, ostream &os)
+{
+    if (offset < 2048)
+        os << "sw " << reg << ", " << offset << "(sp)" << endl;
+    
+    else {
+        os << "li t1, " << offset << endl;
+        os << "add t1, t1, sp" << endl;
+        os << "sw " << reg << ", 0(t1)" << endl;
+    }
 }
 
 // binary

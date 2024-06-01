@@ -14,6 +14,7 @@ extern ST_stack sym_table;
 extern bool ret; // 是否遇到return
 extern int if_stmt_num;
 extern int while_stmt_num;
+extern int func_num;
 extern stack<int> while_stack;
 extern int while_remain_num;
 string IR_name(string ident, int num);
@@ -194,11 +195,11 @@ public:
         if (btype == "int")
             os << ": i32";
         os << " {" << endl;
-        os << "%" << "entry" << ":" << endl;
+        os << "%" << "entry_" << func_num++ << ":" << endl;
 
         ret = false;
 
-        // 为参数分配实际地址空间
+        // 我们需要一开始就为参数分配实际地址空间，否则如果用到时再分配，会造成死循环（lvX/061_greatest_common_divisor.c）
         for (int i = 0; i < arg_names.size(); i++)
         {
             string var_name = IR_name(arg_names[i], scope_num);
@@ -238,7 +239,7 @@ public:
         if (func_params != nullptr)
             func_params->Semantic();
 
-        // 形式参数分配实际地址空间
+        // 形式参数分配实际地址空间，加入全局符号表中
         for (int i = 0; i < arg_names.size(); i++)
         {
             sym_table.add_item(arg_names[i], ST_item(VALUE_VARIABLE, 0));
@@ -515,7 +516,7 @@ public:
 
     void DumpIR(ostream &os) const override 
     {
-        lval->DumpIR(os);
+        // lval->DumpIR(os);
         exp->DumpIR(os);
 
         // string ident = ((LVal_AST *) (lval.get()))->ident;
@@ -924,9 +925,10 @@ public:
         }
 
         os << ")" << endl;
-
+/*
         if (func_type == FUNC_VOID)
             os << reg << " = add 0, 0" << endl;
+*/
     }
 
     void Semantic() override 
