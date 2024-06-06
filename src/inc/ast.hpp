@@ -22,6 +22,7 @@ string if_stmt_name(string ident, int num);
 string logic_name(string ident, int num);
 string func_name(string ident, int num);
 string Arg_name(string ident, int num);
+string Arr_name(string ident, int num);
 
 // 寄存器类
 class Register
@@ -30,6 +31,8 @@ public:
     int num; // 寄存器编号
     int value; // 寄存器内容
     bool is_var; // 寄存器是否用于存一个变量，如果用于“存”了一个常量，认为该寄存器是虚空的
+
+    Register(int n = 0, int v = 0, bool b = false): num(n), value(v), is_var(b) {}
 
     // 寄存器深拷贝
     /*
@@ -1919,15 +1922,6 @@ public:
     {
         if (!reg.is_var) return;
 
-/*
-        // 如果是函数参数，先重新分配一片空间ir_name
-        if (is_arg)
-        {
-            os << "@" << ir_name << " = alloc i32" << endl;
-            os << "store @" << arg_name << ", @" << ir_name << endl;
-        }
-*/
-
         // variable: dump here
         os << reg << " = load @" << ir_name << endl;
     }
@@ -1939,17 +1933,7 @@ public:
         reg.value = pr.first.value;
 
         if (pr.first.type == VALUE_ARG) // 如果发现这个lval对应是函数参数
-        {
             assert(false);
-            /*
-            // 按新变量定义的流程走一遍
-            is_arg = true;
-            sym_table.add_item(ident, ST_item(VALUE_VARIABLE, 0));
-            arg_name = Arg_name(ident, pr.second);
-            ir_name = IR_name(ident, sym_table.top_num);
-            */
-        }
-
 
         else 
         {
@@ -1990,5 +1974,319 @@ public:
     int Value() const override
     {
         return exp->Value();
+    }
+};
+
+// ############################################################################
+// ConstDef ::= IDENT "[" ConstExp "]" "=" ConstInitVal;
+class ConstDef_Arr_AST: public BaseAST
+{
+public: 
+    string ident;
+    unique_ptr<BaseAST> constexp;
+    vector<unique_ptr<BaseAST>> constinitvals; // init values
+    vector<Register> addrs; // 指针, size = constexp->reg.value
+    string ir_name;
+    bool is_glob;
+
+    void DistriReg(int lb) override
+    {
+        constexp->DistriReg(lb);
+        for (int i = 0; i < constinitvals.size(); i++)
+            constinitvals[i]->DistriReg(lb);
+
+        for (int i = 0; i < constexp->reg.value; i++)
+            addrs.push_back(Register(lb + i + 1, 0, true));
+        
+        reg.num = lb + constexp->reg.value + 1;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        int n = constexp->reg.value;
+        int m = constinitvals.size();
+/*
+        constexp->DumpIR(os);
+        for (int i = 0; i < m; i++)
+            constinitvals[i]->DumpIR(os);
+*/
+        if (is_glob)
+        {
+            os << "global @" << ir_name << " = alloc [i32, " << n << "], {";
+            for (int i = 0; i < n; i++)
+            {
+                int value;
+                if (i < m) value = constinitvals[i]->reg.value;
+                else value = 0;
+                
+                if (i == 0) os << value;
+                else os << ", " << value;
+            }
+            os << "}" << endl;
+        }
+        
+        else 
+        {
+            os << "@" << ir_name << " = alloc [i32, " << n << "]" << endl;
+
+            // store.
+            for (int i = 0; i < n; i++)
+            {
+                os << addrs[i] << " = getelemptr @" << ir_name << ", " << i << endl;
+                if (i < m) 
+                    os << "store " << constinitvals[i]->reg << ", " << addrs[i] << endl;
+                else os << "store 0, " << addrs[i] << endl;
+            }
+        }    
+    }
+
+    void Semantic() override 
+    {
+        if (sym_table.top_num == 0) // 全局作用域
+            is_glob = true;
+        else is_glob = false;
+
+        constexp->Semantic();
+        for (int i = 0; i < constinitvals.size(); i++)
+            constinitvals[i]->Semantic();
+        
+        assert(constinitvals.size() <= constexp->reg.value);
+
+        sym_table.add_item(ident, ST_item(ARRAY_CONST));
+        ir_name = Arr_name(ident, sym_table.top_num);
+
+        reg.is_var = true;
+        reg.value = 0;
+    }
+};
+
+// VarDef ::= IDENT "[" ConstExp "]"
+class VarDef_Arr_noinit_AST: public BaseAST
+{
+public:
+    string ident;
+    unique_ptr<BaseAST> constexp;
+    // int size;
+    string ir_name;
+    bool is_glob;
+
+    void DistriReg(int lb) override 
+    {
+        reg.num = lb + 1;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        if (is_glob)
+            os << "global @" << ir_name << " = alloc [i32, " << constexp->reg.value << "], zeroinit" << endl;
+        else 
+            os << "@" << ir_name << " = alloc [i32, " << constexp->reg.value << "]" << endl;
+    }
+
+    void Semantic() override 
+    {
+        if (sym_table.top_num == 0) // 全局作用域
+            is_glob = true;
+        else is_glob = false;
+
+        constexp->Semantic();
+        sym_table.add_item(ident, ST_item(ARRAY_VARIABLE, 0));
+
+        ir_name = Arr_name(ident, sym_table.top_num);
+        reg.is_var = true;
+        reg.value = 0;
+    }
+};
+
+// VarDef ::= IDENT "[" ConstExp "]" "=" InitVal;
+class VarDef_Arr_init_AST: public BaseAST
+{
+public:
+    string ident;
+    unique_ptr<BaseAST> constexp;
+    vector<unique_ptr<BaseAST>> initvals;
+    vector<Register> addrs;
+    string ir_name;
+    bool is_glob;
+
+    void DistriReg(int lb) override
+    {
+        int m = initvals.size();
+        int n = constexp->reg.value;
+        constexp->DistriReg(lb);
+        for (int i = 0; i < m; i++)
+        {
+            initvals[i]->DistriReg(lb);
+            lb = max(lb, initvals[i]->reg.num);
+        }
+            
+        for (int i = 0; i < n; i++)
+            addrs.push_back(Register(lb + i + 1, 0, true));
+        
+        reg.num = lb + n + 1;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        int n = constexp->reg.value;
+        int m = initvals.size();
+
+        for (int i = 0; i < m; i++)
+            initvals[i]->DumpIR(os);
+
+        if (is_glob)
+        {
+            os << "global @" << ir_name << " = alloc [i32, " << n << "], {";
+            for (int i = 0; i < n; i++)
+            {
+                int value;
+                if (i < m) value = initvals[i]->reg.value;
+                else value = 0;
+                
+                if (i == 0) os << value;
+                else os << ", " << value;
+            }
+            os << "}" << endl;
+        }
+
+        else 
+        {
+            os << "@" << ir_name << " = alloc [i32, " << n << "]" << endl;
+
+            // store.
+            for (int i = 0; i < n; i++)
+            {
+                os << addrs[i] << " = getelemptr @" << ir_name << ", " << i << endl;
+                if (i < m) 
+                    os << "store " << initvals[i]->reg << ", " << addrs[i] << endl;
+                else os << "store 0, " << addrs[i] << endl;
+            }
+        }  
+    }
+
+    void Semantic() override 
+    {
+        if (sym_table.top_num == 0) // 全局作用域
+            is_glob = true;
+        else is_glob = false;
+
+        constexp->Semantic();
+
+        int n = constexp->reg.value;
+        int m = initvals.size();
+
+        assert(m <= n);
+
+        for (int i = 0; i < m; i++)
+            initvals[i]->Semantic();
+
+        sym_table.add_item(ident, ST_item(ARRAY_VARIABLE));
+        ir_name = Arr_name(ident, sym_table.top_num);
+
+        reg.is_var = true;
+        reg.value = 0;
+    }
+};
+
+// ConstInitVal ::= "{" [ConstExp {"," ConstExp}] "}";
+class ConstInitVal_Arr_AST: public BaseAST
+{
+public:
+    vector<unique_ptr<BaseAST>> exps;
+
+    void DistriReg(int lb) override
+    {
+        for (int i = 0; i < exps.size(); i++)
+            exps[i]->DistriReg(lb);
+
+        reg.num = lb;
+    }
+    
+    void DumpIR(ostream &os) const override 
+    {
+        for (int i = 0; i < exps.size(); i++)
+            exps[i]->DumpIR(os);
+    }
+
+    void Semantic() override 
+    {
+        for (int i = 0; i < exps.size(); i++)
+            exps[i]->Semantic();
+
+        reg.is_var = false;
+        reg.value = 0;
+    }
+};
+
+// InitVal ::= "{" [Exp {"," Exp}] "}";
+class InitVal_Arr_AST: public BaseAST
+{
+public:
+    vector<unique_ptr<BaseAST>> exps;
+
+    void DistriReg(int lb) override
+    {
+        for (int i = 0; i < exps.size(); i++)
+        {
+            exps[i]->DistriReg(lb);
+            lb = max(lb, exps[i]->reg.num);
+        }
+            
+        reg.num = lb;
+    }
+    
+    void DumpIR(ostream &os) const override 
+    {
+        for (int i = 0; i < exps.size(); i++)
+            exps[i]->DumpIR(os);
+    }
+
+    void Semantic() override 
+    {
+        for (int i = 0; i < exps.size(); i++)
+            exps[i]->Semantic();
+
+        reg.is_var = true;
+        reg.value = 0;
+    }
+};
+
+// LVal ::= IDENT "[" Exp "]";
+class LVal_Arr_AST: public BaseAST
+{
+public:
+    string ident;
+    unique_ptr<BaseAST> exp;
+
+    Register addr;
+    string ir_name;
+
+    void DistriReg(int lb) override 
+    {
+        exp->DistriReg(lb);
+        addr.num = exp->reg.num + 1;
+        addr.is_var = true;
+
+        reg.num = exp->reg.num + 2;
+    }
+
+    void DumpIR(ostream &os) const override
+    {
+        exp->DumpIR(os);
+        os << addr << " = getelemptr @" << ir_name << ", " << exp->reg << endl;
+        os << reg << " = load " << addr << endl;
+    }
+
+    void Semantic() override
+    {
+        exp->Semantic();
+
+        pair<ST_item, int> pr = sym_table.look_up(ident);
+        assert(pr.first.type == ARRAY_CONST || pr.first.type == ARRAY_VARIABLE);
+        // assert(sym_table.find(ident) != sym_table.end());
+        reg.is_var = true;
+        reg.value = 0;
+
+        ir_name = Arr_name(ident, pr.second);
     }
 };

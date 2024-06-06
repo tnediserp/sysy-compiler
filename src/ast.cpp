@@ -33,3 +33,8 @@ string Arg_name(string ident, int num)
 {
     return "arg_" + ident + "_" + to_string(num);
 }
+
+string Arr_name(string ident, int num)
+{
+    return "arr_" + ident + "_" + to_string(num);
+}

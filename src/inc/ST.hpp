@@ -9,6 +9,8 @@ typedef enum {
     VALUE_CONST, // 常数
     VALUE_VARIABLE, // 变量
     VALUE_ARG, // 函数参数
+    ARRAY_CONST, // 常量数组
+    ARRAY_VARIABLE, // 变量数组
     FUNC_INT, // int 函数
     FUNC_VOID, // void 函数
 } ST_item_t;
