@@ -54,7 +54,7 @@ using namespace std;
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef  Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp Decl ConstDecl ConstDef ConstInitVal BlockItem LVal ConstExp ConstDefList BlockList VarDecl VarDef VarDefList InitVal FuncFParams FuncFParam FuncRParams UnitList Def ConstExpList ExpList
+%type <ast_val> FuncDef  Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp Decl ConstDecl ConstDef ConstInitVal BlockItem LVal ConstExp ConstDefList BlockList VarDecl VarDef VarDefList InitVal FuncFParams FuncFParam FuncRParams UnitList Def DimList ConstInitVal_List InitVal_List
 %type <int_val> Number
 %type <str_val> UnaryOp BType FuncType
 
@@ -613,6 +613,25 @@ BType
     $$ = ast;
   };
 
+DimList
+  : '[' Exp ']' {
+    auto ast = new Exp_List();
+    ast->exps.clear();
+    ast->exps.push_back(unique_ptr<BaseAST>($2));
+    $$ = ast;
+  }
+  | DimList '[' Exp ']' {
+    auto ast = new Exp_List();
+    unique_ptr<Exp_List> exp_list = unique_ptr<Exp_List>((Exp_List *) $1);
+
+    ast->exps.clear();
+    for (int i = 0; i < exp_list->exps.size(); i++)
+      ast->exps.push_back(move(exp_list->exps[i]));
+    ast->exps.push_back(unique_ptr<BaseAST>($3));
+
+    $$ = ast;
+  };
+
 ConstDef
   : IDENT '=' ConstInitVal {
     auto ast = new ConstDef_AST();
@@ -620,16 +639,16 @@ ConstDef
     ast->constinitval = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
-  | IDENT '[' ConstExp ']' '=' ConstInitVal {
+  | IDENT DimList '=' ConstInitVal {
     auto ast = new ConstDef_Arr_AST();
     ast->ident = *unique_ptr<string>($1);
-    ast->constexp = unique_ptr<BaseAST>($3);
+    ast->init_list = unique_ptr<BaseAST>($4);
 
-    unique_ptr<ConstInitVal_Arr_AST> constinitval = unique_ptr<ConstInitVal_Arr_AST>((ConstInitVal_Arr_AST *) $6);
+    unique_ptr<Exp_List> dim_list = unique_ptr<Exp_List>((Exp_List *) $2);
 
-    ast->constinitvals.clear();
-    for (int i = 0; i < constinitval->exps.size(); i++)
-      ast->constinitvals.push_back(move(constinitval->exps[i]));
+    ast->constexps.clear();
+    for (int i = 0; i < dim_list->exps.size(); i++)
+      ast->constexps.push_back(move(dim_list->exps[i]));
 
     $$ = ast;
   };
@@ -646,22 +665,27 @@ VarDef
     ast->initval = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
-  | IDENT '[' ConstExp ']' {
+  | IDENT DimList {
     auto ast = new VarDef_Arr_noinit_AST();
     ast->ident = *unique_ptr<string>($1);
-    ast->constexp = unique_ptr<BaseAST>($3);
+    
+    unique_ptr<Exp_List> dim_list = unique_ptr<Exp_List>((Exp_List *) $2);
+
+    ast->constexps.clear();
+    for (int i = 0; i < dim_list->exps.size(); i++)
+      ast->constexps.push_back(move(dim_list->exps[i]));
     $$ = ast;
   }
-  | IDENT '[' ConstExp ']' '=' InitVal {
+  | IDENT DimList '=' InitVal {
     auto ast = new VarDef_Arr_init_AST();
     ast->ident = *unique_ptr<string>($1);
-    ast->constexp = unique_ptr<BaseAST>($3);
+    ast->init_list = unique_ptr<BaseAST>($4);
 
-    unique_ptr<InitVal_Arr_AST> initval = unique_ptr<InitVal_Arr_AST>((InitVal_Arr_AST *) $6);
+    unique_ptr<Exp_List> dim_list = unique_ptr<Exp_List>((Exp_List *) $2);
 
-    ast->initvals.clear();
-    for (int i = 0; i < initval->exps.size(); i++)
-      ast->initvals.push_back(move(initval->exps[i]));
+    ast->constexps.clear();
+    for (int i = 0; i < dim_list->exps.size(); i++)
+      ast->constexps.push_back(move(dim_list->exps[i]));
 
     $$ = ast;
   };
@@ -674,10 +698,10 @@ ConstInitVal
   }
   | '{' '}' {
     auto ast = new ConstInitVal_Arr_AST();
-    ast->exps.clear();
+    ast->init_lists.clear();
     $$ = ast;
   }
-  | '{' ConstExpList '}' {
+  | '{' ConstInitVal_List '}' {
     auto ast = $2;
     $$ = ast;
   };
@@ -690,52 +714,52 @@ InitVal
   }
   | '{' '}' {
     auto ast = new InitVal_Arr_AST();
-    ast->exps.clear();
+    ast->init_lists.clear();
     $$ = ast;
   }
-  | '{' ExpList '}' {
+  | '{' InitVal_List '}' {
     auto ast = $2;
     $$ = ast;
   };
 
-ConstExpList
-  : ConstExp {
+ConstInitVal_List
+  : ConstInitVal {
     auto ast = new ConstInitVal_Arr_AST();
-    ast->exps.clear();
-    ast->exps.push_back(unique_ptr<BaseAST>($1));
+    ast->init_lists.clear();
+    ast->init_lists.push_back(unique_ptr<BaseAST>($1));
     $$ = ast;
   }
-  | ConstExpList ',' ConstExp {
+  | ConstInitVal_List ',' ConstInitVal {
     auto ast = new ConstInitVal_Arr_AST();
-    ast->exps.clear();
+    ast->init_lists.clear();
 
     unique_ptr<ConstInitVal_Arr_AST> app = unique_ptr<ConstInitVal_Arr_AST>((ConstInitVal_Arr_AST *) $1);
 
-    for (int i = 0; i < app->exps.size(); i++)
-      ast->exps.push_back(move(app->exps[i]));
+    for (int i = 0; i < app->init_lists.size(); i++)
+      ast->init_lists.push_back(move(app->init_lists[i]));
     
-    ast->exps.push_back(unique_ptr<BaseAST>($3));
+    ast->init_lists.push_back(unique_ptr<BaseAST>($3));
 
     $$ = ast;
   };
 
-ExpList
-  : Exp {
+InitVal_List
+  : InitVal {
     auto ast = new InitVal_Arr_AST();
-    ast->exps.clear();
-    ast->exps.push_back(unique_ptr<BaseAST>($1));
+    ast->init_lists.clear();
+    ast->init_lists.push_back(unique_ptr<BaseAST>($1));
     $$ = ast;
   }
-  | ExpList ',' Exp {
+  | InitVal_List ',' InitVal {
     auto ast = new InitVal_Arr_AST();
-    ast->exps.clear();
+    ast->init_lists.clear();
 
     unique_ptr<InitVal_Arr_AST> app = unique_ptr<InitVal_Arr_AST>((InitVal_Arr_AST *) $1);
 
-    for (int i = 0; i < app->exps.size(); i++)
-      ast->exps.push_back(move(app->exps[i]));
+    for (int i = 0; i < app->init_lists.size(); i++)
+      ast->init_lists.push_back(move(app->init_lists[i]));
     
-    ast->exps.push_back(unique_ptr<BaseAST>($3));
+    ast->init_lists.push_back(unique_ptr<BaseAST>($3));
 
     $$ = ast;
   }
@@ -746,10 +770,16 @@ LVal
     ast->ident = *unique_ptr<string>($1);
     $$ = ast;
   }
-  | IDENT '[' Exp ']' {
+  | IDENT DimList {
     auto ast = new LVal_Arr_AST();
     ast->ident = *unique_ptr<string>($1);
-    ast->exp = unique_ptr<BaseAST>($3);
+
+    unique_ptr<Exp_List> dim_list = unique_ptr<Exp_List>((Exp_List *) $2);
+
+    ast->exps.clear();
+    for (int i = 0; i < dim_list->exps.size(); i++)
+      ast->exps.push_back(move(dim_list->exps[i]));
+
     $$ = ast;
   };
 

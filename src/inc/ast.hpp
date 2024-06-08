@@ -10,6 +10,8 @@
 #include <inc/ST.hpp>
 using namespace std;
 
+class Register;
+
 extern ST_stack sym_table;
 extern bool ret; // 是否遇到return
 extern int if_stmt_num;
@@ -17,12 +19,17 @@ extern int while_stmt_num;
 extern int func_num;
 extern stack<int> while_stack;
 extern int while_remain_num;
+extern int tmp_addr;
+extern int tmp_reg;
 string IR_name(string ident, int num);
 string if_stmt_name(string ident, int num);
 string logic_name(string ident, int num);
 string func_name(string ident, int num);
 string Arg_name(string ident, int num);
 string Arr_name(string ident, int num);
+void Arrange_alloc(vector<int> dims, ostream &os);
+void Arrange_init_list(vector<Register> regs_list, int begin, int end, vector<int> dims, ostream &os);
+void Store_arr(vector<Register> regs_list, vector<int> dims, int depth, string base, ostream &os);
 
 // 寄存器类
 class Register
@@ -84,6 +91,14 @@ public:
     virtual void DistriReg(int lb){} // 分配寄存器，编号以lb为下界
     virtual int Value() const {return INT32_MAX;}  // 表达式求值
     virtual void Semantic() = 0; // 语义分析
+
+    // 专门用于解析dims维数组的初始化列表，将其补充至dims相应长度
+    virtual vector<Register> Parse_list(vector<int> dims) 
+    {
+        vector<Register> reg_list;
+        reg_list.clear();
+        return reg_list;
+    }
 };
 
 
@@ -124,7 +139,6 @@ public:
 
     void Semantic() override 
     {
-        // cout << "Semantic" << endl;
         // 库函数
         sym_table.add_item("getint", ST_item(FUNC_INT));
         sym_table.add_item("getch", ST_item(FUNC_INT));
@@ -1658,7 +1672,10 @@ public:
         reg.num = lb;
     }
 
-    void DumpIR(ostream &os) const override { /* do nothing. */ }
+    void DumpIR(ostream &os) const override 
+    {
+        constdecl->DumpIR(os);
+    }
 
     void Semantic() override
     {
@@ -1703,10 +1720,13 @@ public:
         reg.num = lb + 1;
     }
 
-    void DumpIR(ostream &os) const override { /* do nothing. */ }
+    void DumpIR(ostream &os) const override 
+    {
+        for (int i = 0; i < constdefs.size(); i++)
+            constdefs[i]->DumpIR(os);
+    }
     void Semantic() override 
     {
-        // cout << "Semantic ConstDecl" << endl;
         for (int i = 0; i < constdefs.size(); i++)
             constdefs[i]->Semantic();
     }
@@ -1877,6 +1897,14 @@ public:
     {
         return const_exp->Value();
     }
+
+    vector<Register> Parse_list(vector<int> dims) override 
+    {
+        // 当parse一个constexp时，无论期望的数组形状如何，永远返回一个单元集
+        vector<Register> regs_list;
+        regs_list.push_back(reg);
+        return regs_list;
+    }
 };
 
 // InitVal ::= Exp;
@@ -1901,6 +1929,14 @@ public:
         exp->Semantic();
         reg.is_var = exp->reg.is_var;
         reg.value = exp->reg.value;
+    }
+
+    vector<Register> Parse_list(vector<int> dims) override 
+    {
+        // 当parse一个exp时，无论期望的数组形状如何，永远返回一个单元集
+        vector<Register> regs_list;
+        regs_list.push_back(reg);
+        return regs_list;
     }
 };
 
@@ -1978,67 +2014,61 @@ public:
 };
 
 // ############################################################################
-// ConstDef ::= IDENT "[" ConstExp "]" "=" ConstInitVal;
+class Exp_List: public BaseAST
+{
+public:
+    vector<unique_ptr<BaseAST>> exps;
+
+    void DistriReg(int lb) override {}
+    void DumpIR(ostream &os) const override {}
+    void Semantic() override {}
+};
+
+// ConstDef ::= IDENT { "[" ConstExp "]" } "=" ConstInitVal;
 class ConstDef_Arr_AST: public BaseAST
 {
 public: 
     string ident;
-    unique_ptr<BaseAST> constexp;
-    vector<unique_ptr<BaseAST>> constinitvals; // init values
-    vector<Register> addrs; // 指针, size = constexp->reg.value
+    vector<unique_ptr<BaseAST>> constexps;
+    unique_ptr<BaseAST> init_list; // 初始化列表
+    vector<int> dims;
     string ir_name;
     bool is_glob;
 
     void DistriReg(int lb) override
     {
-        constexp->DistriReg(lb);
-        for (int i = 0; i < constinitvals.size(); i++)
-            constinitvals[i]->DistriReg(lb);
-
-        for (int i = 0; i < constexp->reg.value; i++)
-            addrs.push_back(Register(lb + i + 1, 0, true));
-        
-        reg.num = lb + constexp->reg.value + 1;
+        init_list->DistriReg(lb);
+        reg.num = lb;
     }
 
     void DumpIR(ostream &os) const override 
     {
-        int n = constexp->reg.value;
-        int m = constinitvals.size();
-/*
-        constexp->DumpIR(os);
-        for (int i = 0; i < m; i++)
-            constinitvals[i]->DumpIR(os);
-*/
+        // 解析初始列表
+        vector<Register> regs_list = init_list->Parse_list(dims);
+
+        // 全局数组，直接初始化输出
         if (is_glob)
         {
-            os << "global @" << ir_name << " = alloc [i32, " << n << "], {";
-            for (int i = 0; i < n; i++)
-            {
-                int value;
-                if (i < m) value = constinitvals[i]->reg.value;
-                else value = 0;
-                
-                if (i == 0) os << value;
-                else os << ", " << value;
-            }
-            os << "}" << endl;
+            os << "global @" << ir_name << " = ";
+            Arrange_alloc(dims, os);
+            os << ", ";
+            Arrange_init_list(regs_list, 0, regs_list.size(), dims, os);
+            os << endl;
         }
         
+        // 局部数组，store
         else 
         {
-            os << "@" << ir_name << " = alloc [i32, " << n << "]" << endl;
+            os << "@" << ir_name << " = ";
+            Arrange_alloc(dims, os);
+            os << endl;
 
             // store.
-            for (int i = 0; i < n; i++)
-            {
-                os << addrs[i] << " = getelemptr @" << ir_name << ", " << i << endl;
-                if (i < m) 
-                    os << "store " << constinitvals[i]->reg << ", " << addrs[i] << endl;
-                else os << "store 0, " << addrs[i] << endl;
-            }
+            tmp_reg = 0;
+            Store_arr(regs_list, dims, 0, "@" + ir_name, os);
         }    
     }
+
 
     void Semantic() override 
     {
@@ -2046,11 +2076,14 @@ public:
             is_glob = true;
         else is_glob = false;
 
-        constexp->Semantic();
-        for (int i = 0; i < constinitvals.size(); i++)
-            constinitvals[i]->Semantic();
-        
-        assert(constinitvals.size() <= constexp->reg.value);
+
+        for (int i = 0; i < constexps.size(); i++)
+        {
+            constexps[i]->Semantic();
+            dims.push_back(constexps[i]->reg.value);
+        }
+            
+        init_list->Semantic();
 
         sym_table.add_item(ident, ST_item(ARRAY_CONST));
         ir_name = Arr_name(ident, sym_table.top_num);
@@ -2060,13 +2093,13 @@ public:
     }
 };
 
-// VarDef ::= IDENT "[" ConstExp "]"
+// VarDef ::= IDENT { "[" ConstExp "]" }
 class VarDef_Arr_noinit_AST: public BaseAST
 {
 public:
     string ident;
-    unique_ptr<BaseAST> constexp;
-    // int size;
+    vector<unique_ptr<BaseAST>> constexps;
+    vector<int> dims;
     string ir_name;
     bool is_glob;
 
@@ -2077,10 +2110,21 @@ public:
 
     void DumpIR(ostream &os) const override
     {
+        // 全局数组
         if (is_glob)
-            os << "global @" << ir_name << " = alloc [i32, " << constexp->reg.value << "], zeroinit" << endl;
+        {
+            os << "global @" << ir_name << " = ";
+            Arrange_alloc(dims, os);
+            os << ", zeroinit" << endl;
+        }
+
+        // 局部数组 
         else 
-            os << "@" << ir_name << " = alloc [i32, " << constexp->reg.value << "]" << endl;
+        {
+            os << "@" << ir_name << " = ";
+            Arrange_alloc(dims, os);
+            os << endl;
+        } 
     }
 
     void Semantic() override 
@@ -2089,7 +2133,12 @@ public:
             is_glob = true;
         else is_glob = false;
 
-        constexp->Semantic();
+        for (int i = 0; i < constexps.size(); i++)
+        {
+            constexps[i]->Semantic();
+            dims.push_back(constexps[i]->reg.value);
+        }
+
         sym_table.add_item(ident, ST_item(ARRAY_VARIABLE, 0));
 
         ir_name = Arr_name(ident, sym_table.top_num);
@@ -2103,65 +2152,46 @@ class VarDef_Arr_init_AST: public BaseAST
 {
 public:
     string ident;
-    unique_ptr<BaseAST> constexp;
-    vector<unique_ptr<BaseAST>> initvals;
-    vector<Register> addrs;
+    vector<unique_ptr<BaseAST>> constexps;
+    unique_ptr<BaseAST> init_list; // 初始化列表
+    vector<int> dims;
     string ir_name;
     bool is_glob;
 
     void DistriReg(int lb) override
     {
-        int m = initvals.size();
-        int n = constexp->reg.value;
-        constexp->DistriReg(lb);
-        for (int i = 0; i < m; i++)
-        {
-            initvals[i]->DistriReg(lb);
-            lb = max(lb, initvals[i]->reg.num);
-        }
-            
-        for (int i = 0; i < n; i++)
-            addrs.push_back(Register(lb + i + 1, 0, true));
-        
-        reg.num = lb + n + 1;
+        init_list->DistriReg(lb);
+        reg.num = init_list->reg.num + 1;
     }
 
     void DumpIR(ostream &os) const override 
     {
-        int n = constexp->reg.value;
-        int m = initvals.size();
+        init_list->DumpIR(os);
 
-        for (int i = 0; i < m; i++)
-            initvals[i]->DumpIR(os);
+        // 解析初始列表
+        vector<Register> regs_list = init_list->Parse_list(dims);
 
+        // 全局数组，直接初始化输出
         if (is_glob)
         {
-            os << "global @" << ir_name << " = alloc [i32, " << n << "], {";
-            for (int i = 0; i < n; i++)
-            {
-                int value;
-                if (i < m) value = initvals[i]->reg.value;
-                else value = 0;
-                
-                if (i == 0) os << value;
-                else os << ", " << value;
-            }
-            os << "}" << endl;
+            os << "global @" << ir_name << " = ";
+            Arrange_alloc(dims, os);
+            os << ", ";
+            Arrange_init_list(regs_list, 0, regs_list.size(), dims, os);
+            os << endl;
         }
-
+        
+        // 局部数组，store
         else 
         {
-            os << "@" << ir_name << " = alloc [i32, " << n << "]" << endl;
+            os << "@" << ir_name << " = ";
+            Arrange_alloc(dims, os);
+            os << endl;
 
             // store.
-            for (int i = 0; i < n; i++)
-            {
-                os << addrs[i] << " = getelemptr @" << ir_name << ", " << i << endl;
-                if (i < m) 
-                    os << "store " << initvals[i]->reg << ", " << addrs[i] << endl;
-                else os << "store 0, " << addrs[i] << endl;
-            }
-        }  
+            tmp_reg = 0;
+            Store_arr(regs_list, dims, 0, "@" + ir_name, os);
+        }
     }
 
     void Semantic() override 
@@ -2170,15 +2200,13 @@ public:
             is_glob = true;
         else is_glob = false;
 
-        constexp->Semantic();
-
-        int n = constexp->reg.value;
-        int m = initvals.size();
-
-        assert(m <= n);
-
-        for (int i = 0; i < m; i++)
-            initvals[i]->Semantic();
+        for (int i = 0; i < constexps.size(); i++)
+        {
+            constexps[i]->Semantic();
+            dims.push_back(constexps[i]->reg.value);
+        }
+            
+        init_list->Semantic();
 
         sym_table.add_item(ident, ST_item(ARRAY_VARIABLE));
         ir_name = Arr_name(ident, sym_table.top_num);
@@ -2188,98 +2216,204 @@ public:
     }
 };
 
-// ConstInitVal ::= "{" [ConstExp {"," ConstExp}] "}";
+// ConstInitVal ::= "{" [ConstInitVal {"," ConstInitVal}] "}";
 class ConstInitVal_Arr_AST: public BaseAST
 {
 public:
-    vector<unique_ptr<BaseAST>> exps;
+    // 数组的初始化列表是一个集合，集合中的每个元素都是一个初始化列表，
+    // 形如{{}, 2, 4, 1, {}, {}, ...}, 
+    vector<unique_ptr<BaseAST>> init_lists;
 
     void DistriReg(int lb) override
     {
-        for (int i = 0; i < exps.size(); i++)
-            exps[i]->DistriReg(lb);
+        for (int i = 0; i < init_lists.size(); i++)
+            init_lists[i]->DistriReg(lb);
 
         reg.num = lb;
     }
     
     void DumpIR(ostream &os) const override 
     {
-        for (int i = 0; i < exps.size(); i++)
-            exps[i]->DumpIR(os);
+        for (int i = 0; i < init_lists.size(); i++)
+            init_lists[i]->DumpIR(os);
     }
 
     void Semantic() override 
     {
-        for (int i = 0; i < exps.size(); i++)
-            exps[i]->Semantic();
+        for (int i = 0; i < init_lists.size(); i++)
+            init_lists[i]->Semantic();
 
         reg.is_var = false;
         reg.value = 0;
     }
+
+    // 解析初始化列表
+    vector<Register> Parse_list(vector<int> dims) override
+    {
+        assert(!dims.empty());
+
+        vector<Register> regs_list;
+        int n = init_lists.size();
+        int m = dims.size();
+        int sum = 0; // 已完成解析的总长度
+
+        for (int i = 0; i < n; i++)
+        {
+            // 根据sum确定在哪一维处对齐
+            int s = sum;
+            int j;
+            vector<int> new_dims;
+            for (j = m - 1; j >= 0; j--)
+            {
+                if (s % dims[j] != 0)
+                    break;
+                s = s / dims[j];
+            }
+
+            for (int l = max(1, j + 1); l < m; l++)
+                new_dims.push_back(dims[l]);
+
+            // 解析init_lists[i]
+            vector<Register> regs_tmp = init_lists[i]->Parse_list(new_dims);
+
+            // 更新
+            sum += regs_tmp.size();
+            regs_list.insert(regs_list.end(), regs_tmp.begin(), regs_tmp.end());
+        }
+
+        // 补0；
+        int prod = 1; // 数组的期望长度
+        for (int i = 0; i < m; i++)
+            prod *= dims[i];
+
+        int size = regs_list.size();
+        for (int i = size; i < prod; i++)
+            regs_list.push_back(Register(0, 0, false));
+
+        return regs_list;
+    }
 };
 
-// InitVal ::= "{" [Exp {"," Exp}] "}";
+// InitVal ::= "{" [InitVal {"," InitVal}] "}";
 class InitVal_Arr_AST: public BaseAST
 {
 public:
-    vector<unique_ptr<BaseAST>> exps;
+    vector<unique_ptr<BaseAST>> init_lists;
 
     void DistriReg(int lb) override
+    {
+        for (int i = 0; i < init_lists.size(); i++)
+        {
+            init_lists[i]->DistriReg(lb);
+            lb = max(lb, init_lists[i]->reg.num);
+        }
+    
+        reg.num = lb + 1;
+    }
+    
+    void DumpIR(ostream &os) const override 
+    {
+        for (int i = 0; i < init_lists.size(); i++)
+            init_lists[i]->DumpIR(os);
+    }
+
+    void Semantic() override 
+    {
+        for (int i = 0; i < init_lists.size(); i++)
+            init_lists[i]->Semantic();
+
+        reg.is_var = true;
+        reg.value = 0;
+    }
+
+    vector<Register> Parse_list(vector<int> dims) override
+    {
+        assert(!dims.empty());
+
+        vector<Register> regs_list;
+        int n = init_lists.size();
+        int m = dims.size();
+        int sum = 0; // 已完成解析的总长度
+
+        for (int i = 0; i < n; i++)
+        {
+            // 根据sum确定在哪一维处对齐
+            int s = sum;
+            int j;
+            vector<int> new_dims;
+            for (j = m - 1; j >= 0; j--)
+            {
+                if (s % dims[j] != 0)
+                    break;
+                s = s / dims[j];
+            }
+
+            for (int l = max(1, j + 1); l < m; l++)
+                new_dims.push_back(dims[l]);
+
+            // 解析init_lists[i]
+            vector<Register> regs_tmp = init_lists[i]->Parse_list(new_dims);
+
+            // 更新
+            sum += regs_tmp.size();
+            regs_list.insert(regs_list.end(), regs_tmp.begin(), regs_tmp.end());
+        }
+
+        // 补0；
+        int prod = 1; // 数组的期望长度
+        for (int i = 0; i < m; i++)
+            prod *= dims[i];
+
+        int size = regs_list.size();
+        for (int i = size; i < prod; i++)
+            regs_list.push_back(Register(0, 0, false));
+
+        return regs_list;
+    }
+};
+
+// LVal ::= IDENT { "[" Exp "]" };
+class LVal_Arr_AST: public BaseAST
+{
+public:
+    string ident;
+    vector<unique_ptr<BaseAST>> exps;
+
+    // Register addr;
+    string ir_name;
+
+    void DistriReg(int lb) override 
     {
         for (int i = 0; i < exps.size(); i++)
         {
             exps[i]->DistriReg(lb);
             lb = max(lb, exps[i]->reg.num);
         }
-            
-        reg.num = lb;
-    }
-    
-    void DumpIR(ostream &os) const override 
-    {
-        for (int i = 0; i < exps.size(); i++)
-            exps[i]->DumpIR(os);
-    }
-
-    void Semantic() override 
-    {
-        for (int i = 0; i < exps.size(); i++)
-            exps[i]->Semantic();
-
-        reg.is_var = true;
-        reg.value = 0;
-    }
-};
-
-// LVal ::= IDENT "[" Exp "]";
-class LVal_Arr_AST: public BaseAST
-{
-public:
-    string ident;
-    unique_ptr<BaseAST> exp;
-
-    Register addr;
-    string ir_name;
-
-    void DistriReg(int lb) override 
-    {
-        exp->DistriReg(lb);
-        addr.num = exp->reg.num + 1;
-        addr.is_var = true;
-
-        reg.num = exp->reg.num + 2;
+        reg.num = lb + 1;
     }
 
     void DumpIR(ostream &os) const override
     {
-        exp->DumpIR(os);
-        os << addr << " = getelemptr @" << ir_name << ", " << exp->reg << endl;
-        os << reg << " = load " << addr << endl;
+        for (int i = 0; i < exps.size(); i++)
+            exps[i]->DumpIR(os);
+
+        string base = "@" + ir_name;
+
+        for (int i = 0; i < exps.size(); i++)
+        {
+            string new_base = "%addr" + to_string(tmp_addr++);
+            os << new_base << " = getelemptr " << base << ", " << exps[i]->reg << endl;
+            base = new_base;
+        }
+        os << reg << " = load " << base << endl;
     }
 
     void Semantic() override
     {
-        exp->Semantic();
+        for (int i = 0; i < exps.size(); i++)
+        {
+            exps[i]->Semantic();
+        }
 
         pair<ST_item, int> pr = sym_table.look_up(ident);
         assert(pr.first.type == ARRAY_CONST || pr.first.type == ARRAY_VARIABLE);
