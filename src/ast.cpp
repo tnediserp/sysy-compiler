@@ -41,10 +41,15 @@ string Arr_name(string ident, int num)
     return "arr_" + ident + "_" + to_string(num);
 }
 
+string Ptr_name(string ident, int num)
+{
+    return "ptr_" + ident + "_" + to_string(num);
+}
+
 // @arr = alloc [[i32, 3], 2]
 void Arrange_alloc(vector<int> dims, ostream &os)
 {
-    os << "alloc ";
+    // os << "alloc ";
     for (int i = 0; i < dims.size(); i++)
         os << "[";
     os << "i32";

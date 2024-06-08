@@ -27,6 +27,7 @@ string logic_name(string ident, int num);
 string func_name(string ident, int num);
 string Arg_name(string ident, int num);
 string Arr_name(string ident, int num);
+string Ptr_name(string ident, int num);
 void Arrange_alloc(vector<int> dims, ostream &os);
 void Arrange_init_list(vector<Register> regs_list, int begin, int end, vector<int> dims, ostream &os);
 void Store_arr(vector<Register> regs_list, vector<int> dims, int depth, string base, ostream &os);
@@ -99,6 +100,7 @@ public:
         reg_list.clear();
         return reg_list;
     }
+    virtual void DumpArg(ostream &os, Register reg = Register()) const {} // 专门用于输出函数参数分配实际地址的内容 
 };
 
 
@@ -188,10 +190,11 @@ public:
     string btype;
     string ident;
     unique_ptr<BaseAST> func_params;
-    vector<string> arg_names; // 参数名
+    // vector<string> arg_names; // 参数名
+    // vector<ST_item_t> arg_types; //参数类型
     unique_ptr<BaseAST> block;
     string ir_name;
-    int scope_num;
+    // int scope_num;
 
     void DistriReg(int lb) override 
     {
@@ -217,13 +220,21 @@ public:
         ret = false;
 
         // 我们需要一开始就为参数分配实际地址空间，否则如果用到时再分配，会造成死循环（lvX/061_greatest_common_divisor.c）
-        for (int i = 0; i < arg_names.size(); i++)
+        if (func_params != nullptr)
+            func_params->DumpArg(os);
+/*        for (int i = 0; i < arg_names.size(); i++)
         {
             string var_name = IR_name(arg_names[i], scope_num);
             string arg_name = Arg_name(arg_names[i], scope_num);
-            os << "@" << var_name << " = alloc i32" << endl;
+            // alloc
+            os << "@" << var_name << " = alloc ";
+            if (arg_types[i] == ARG_VAR)
+                os << "i32" << endl;
+            else if (arg_types[i] == ARG_PTR);
+                
             os << "store @" << arg_name << ", @" << var_name << endl;
         }
+*/
 
         block->DumpIR(os);
 
@@ -249,7 +260,7 @@ public:
         // cout << "func_name" << ir_name << endl;
 
         sym_table.push_scope(); // 为形式参数列表创建一个新的作用域
-        scope_num = sym_table.top_num;
+        // scope_num = sym_table.top_num;
 
         // cout << "begin block" << endl;
 
@@ -257,10 +268,22 @@ public:
             func_params->Semantic();
 
         // 形式参数分配实际地址空间，加入全局符号表中
-        for (int i = 0; i < arg_names.size(); i++)
+        if (func_params != nullptr)
+            func_params->Parse_list(vector<int>());
+/*        for (int i = 0; i < arg_names.size(); i++)
         {
-            sym_table.add_item(arg_names[i], ST_item(VALUE_VARIABLE, 0));
+            pair<ST_item, int> pr = sym_table.look_up(arg_names[i]);
+            arg_types.push_back(pr.first.type);
+            // 如果参数是变量
+            if (pr.first.type == ARG_VAR)
+                sym_table.add_item(arg_names[i], ST_item(VALUE_VARIABLE, 0));
+            // 如果参数是指针
+            else if (pr.first.type == ARG_PTR)
+                sym_table.add_item(arg_names[i], ST_item(VALUE_PTR, 0));
+            // 不会遇到其他情况
+            else assert(false);
         }
+*/
 
         block->Semantic();
         sym_table.pop_scope();
@@ -274,7 +297,7 @@ class FuncFParam_list_AST: public BaseAST
 {
 public: 
     vector<unique_ptr<BaseAST>> param_list;
-    vector<string> arg_names;
+    // vector<string> arg_names;
 
     void DistriReg(int lb) override 
     {
@@ -303,6 +326,23 @@ public:
             param_list[i]->Semantic();
         }
     }
+
+    // 借用这个函数，完成函数参数分配实际地址空间的功能
+    // 将在FuncDef的Semantic中被调用
+    vector<Register> Parse_list(vector<int> dims) override
+    {
+        for (int i = 0; i < param_list.size(); i++)
+            param_list[i]->Parse_list(dims);
+        
+        return vector<Register>();
+    }
+
+    // 输出分配实际地址空间的内容
+    void DumpArg(ostream &os, Register reg) const override
+    {
+        for (int i = 0; i < param_list.size(); i++)
+            param_list[i]->DumpArg(os);
+    }
 };
 
 // FuncFParam  ::= BType IDENT;
@@ -312,6 +352,7 @@ public:
     string btype;
     string ident;
     string arg_name; // 参数名
+    string var_name; // 对应变量名
 
     void DistriReg(int lb) override 
     {
@@ -320,7 +361,6 @@ public:
 
     void DumpIR(ostream &os) const override 
     {
-
         os << "@" << arg_name << ": i32";
     }
 
@@ -328,8 +368,81 @@ public:
     {
         // cout << "Semantic FuncFParam" << endl;
         // 加入一个函数参数
-        sym_table.add_item(ident, ST_item(VALUE_ARG, 0));
+        sym_table.add_item(ident, ST_item(ARG_VAR));
         arg_name = Arg_name(ident, sym_table.top_num);
+        var_name = IR_name(ident, sym_table.top_num);
+    }
+
+    // 借用这个函数，完成函数参数分配实际地址空间的功能
+    // 将在FuncDef的Semantic中被调用
+    vector<Register> Parse_list(vector<int> dims) override
+    {
+        sym_table.add_item(ident, ST_item(VALUE_VARIABLE));
+        return vector<Register>();
+    }
+
+    // 输出分配实际地址空间的内容
+    void DumpArg(ostream &os, Register reg) const override
+    {
+        os << "@" << var_name << " = alloc i32" << endl;
+        os << "store @" << arg_name << ", @" << var_name << endl;
+    }
+};
+
+// FuncFParam ::= BType IDENT "[" "]" {"[" ConstExp "]"};
+class FuncFParam_ptr_AST: public BaseAST
+{
+public: 
+    string btype;
+    string ident;
+    vector<unique_ptr<BaseAST>> constexps;
+    string arg_name; // 参数名 
+    string ptr_name; // 对应指针名
+    vector<int> dims;
+
+    void DistriReg(int lb) override
+    {
+        reg.num = lb;
+    }
+
+    void DumpIR(ostream &os) const override 
+    {
+        os << "@" << arg_name << ": *";
+        if (constexps.empty())
+            os << "i32";
+        else Arrange_alloc(dims, os);
+    }
+
+    void Semantic() override 
+    {
+        for (int i = 0; i < constexps.size(); i++)
+        {
+            constexps[i]->Semantic();
+            dims.push_back(constexps[i]->reg.value);
+        }
+
+        sym_table.add_item(ident, ST_item(ARG_PTR, constexps.size()+1));
+        arg_name = Arg_name(ident, sym_table.top_num);
+        ptr_name = Ptr_name(ident, sym_table.top_num);
+    }
+
+    // 借用这个函数，完成函数参数分配实际地址空间的功能
+    // 将在FuncDef的Semantic中被调用
+    vector<Register> Parse_list(vector<int> dims) override
+    {
+        sym_table.add_item(ident, ST_item(VALUE_PTR, constexps.size()+1));
+        return vector<Register>();
+    }
+
+    // 输出分配实际地址空间的内容
+    void DumpArg(ostream &os, Register reg) const override
+    {
+        os << "@" << ptr_name << " = alloc *";
+        if (constexps.empty())
+            os << "i32";
+        else Arrange_alloc(dims, os);
+        os << endl;
+        os << "store @" << arg_name << ", @" << ptr_name << endl;
     }
 };
 
@@ -533,11 +646,10 @@ public:
 
     void DumpIR(ostream &os) const override 
     {
-        // lval->DumpIR(os);
         exp->DumpIR(os);
 
-        // string ident = ((LVal_AST *) (lval.get()))->ident;
-        os << "store " << exp->reg << ", @" << ir_name << endl;
+        // store
+        lval->DumpArg(os, exp->reg);
     }
 
     void Semantic() override 
@@ -548,12 +660,6 @@ public:
         assert(lval->reg.is_var);
         reg.is_var = true;
         reg.value = exp->reg.value;
-
-        // string ident = ((LVal_AST *) (lval.get()))->ident;
-        // 能够保证，被操作的ident一定不是argument
-        pair<ST_item, int> pr = sym_table.modify_item(ident, ST_item(VALUE_VARIABLE, reg.value));
-
-        ir_name = IR_name(ident, pr.second);
     }
 };
 
@@ -1783,7 +1889,7 @@ public:
         constinitval->Semantic();
 
         assert(!constinitval->reg.is_var);
-        sym_table.add_item(ident, ST_item(VALUE_CONST, constinitval->reg.value));
+        sym_table.add_item(ident, ST_item(VALUE_CONST, 0, constinitval->reg.value));
 
         reg.is_var = false;
         reg.value = constinitval->reg.value;
@@ -1827,7 +1933,7 @@ public:
             is_glob = true;
         else is_glob = false;
 
-        sym_table.add_item(ident, ST_item(VALUE_VARIABLE, initval->reg.value));
+        sym_table.add_item(ident, ST_item(VALUE_VARIABLE, 0, initval->reg.value));
 
         reg.is_var = true;
         reg.value = initval->reg.value;
@@ -1863,7 +1969,7 @@ public:
             is_glob = true;
         else is_glob = false;
 
-        sym_table.add_item(ident, ST_item(VALUE_VARIABLE, 0));
+        sym_table.add_item(ident, ST_item(VALUE_VARIABLE));
 
         reg.is_var = true;
         reg.value = 0;
@@ -1946,6 +2052,7 @@ class LVal_AST: public BaseAST
 public: 
     string ident;
     string ir_name;
+    ST_item_t type;
     // bool is_arg; // 是否是函数参数
     // string arg_name; // 如果是函数参数，则存放该参数名，否则为空串
 
@@ -1958,26 +2065,61 @@ public:
     {
         if (!reg.is_var) return;
 
-        // variable: dump here
-        os << reg << " = load @" << ir_name << endl;
+        switch (type)
+        {
+        case VALUE_VARIABLE:
+            os << reg << " = load @" << ir_name << endl;
+            break;
+        case VALUE_PTR:
+            os << "%addr" + to_string(tmp_addr) << " = load @" << ir_name << endl;
+            os << reg << " = getptr %addr" + to_string(tmp_addr) << ", 0" << endl;
+            tmp_addr++;
+            break;
+        case ARRAY_CONST:
+        case ARRAY_VARIABLE:
+            os << reg << " = getelemptr @" << ir_name << ", 0" << endl;
+        default:
+            break;
+        }
     }
     void Semantic() override
     {
         pair<ST_item, int> pr = sym_table.look_up(ident);
+        type = pr.first.type;
         // assert(sym_table.find(ident) != sym_table.end());
-        reg.is_var = (pr.first.type == VALUE_ARG) || (pr.first.type == VALUE_VARIABLE);
+        reg.is_var = !(type == VALUE_CONST);
         reg.value = pr.first.value;
 
-        if (pr.first.type == VALUE_ARG) // 如果发现这个lval对应是函数参数
+        if (type == ARG_VAR) // 如果发现这个lval对应是函数参数
             assert(false);
 
-        else 
-        {
             // is_arg = false;
             // arg_name = "";
+        switch (type)
+        {
+        case VALUE_CONST:
+        case VALUE_VARIABLE:
             ir_name = IR_name(ident, pr.second);
+            break;
+        case VALUE_PTR:
+            ir_name = Ptr_name(ident, pr.second);
+            break;
+        case ARRAY_CONST:
+        case ARRAY_VARIABLE:
+            ir_name = Arr_name(ident, pr.second);
+            break;
+        
+        default:
+            assert(false);
         }
     }
+
+    // 借用这个函数处理store的情况，把reg store到lval对应的地址中
+    void DumpArg(ostream &os, Register reg) const override
+    {
+        os << "store " << reg << ", " << "@" << ir_name << endl;
+    }
+
     int Value() const override 
     {
         pair<ST_item, int> pr = sym_table.look_up(ident);
@@ -2049,7 +2191,7 @@ public:
         // 全局数组，直接初始化输出
         if (is_glob)
         {
-            os << "global @" << ir_name << " = ";
+            os << "global @" << ir_name << " = alloc ";
             Arrange_alloc(dims, os);
             os << ", ";
             Arrange_init_list(regs_list, 0, regs_list.size(), dims, os);
@@ -2059,7 +2201,7 @@ public:
         // 局部数组，store
         else 
         {
-            os << "@" << ir_name << " = ";
+            os << "@" << ir_name << " = alloc ";
             Arrange_alloc(dims, os);
             os << endl;
 
@@ -2085,7 +2227,7 @@ public:
             
         init_list->Semantic();
 
-        sym_table.add_item(ident, ST_item(ARRAY_CONST));
+        sym_table.add_item(ident, ST_item(ARRAY_CONST, constexps.size()));
         ir_name = Arr_name(ident, sym_table.top_num);
 
         reg.is_var = true;
@@ -2113,7 +2255,7 @@ public:
         // 全局数组
         if (is_glob)
         {
-            os << "global @" << ir_name << " = ";
+            os << "global @" << ir_name << " = alloc ";
             Arrange_alloc(dims, os);
             os << ", zeroinit" << endl;
         }
@@ -2121,7 +2263,7 @@ public:
         // 局部数组 
         else 
         {
-            os << "@" << ir_name << " = ";
+            os << "@" << ir_name << " = alloc ";
             Arrange_alloc(dims, os);
             os << endl;
         } 
@@ -2139,7 +2281,7 @@ public:
             dims.push_back(constexps[i]->reg.value);
         }
 
-        sym_table.add_item(ident, ST_item(ARRAY_VARIABLE, 0));
+        sym_table.add_item(ident, ST_item(ARRAY_VARIABLE, constexps.size()));
 
         ir_name = Arr_name(ident, sym_table.top_num);
         reg.is_var = true;
@@ -2174,7 +2316,7 @@ public:
         // 全局数组，直接初始化输出
         if (is_glob)
         {
-            os << "global @" << ir_name << " = ";
+            os << "global @" << ir_name << " = alloc ";
             Arrange_alloc(dims, os);
             os << ", ";
             Arrange_init_list(regs_list, 0, regs_list.size(), dims, os);
@@ -2184,7 +2326,7 @@ public:
         // 局部数组，store
         else 
         {
-            os << "@" << ir_name << " = ";
+            os << "@" << ir_name << " = alloc ";
             Arrange_alloc(dims, os);
             os << endl;
 
@@ -2208,7 +2350,7 @@ public:
             
         init_list->Semantic();
 
-        sym_table.add_item(ident, ST_item(ARRAY_VARIABLE));
+        sym_table.add_item(ident, ST_item(ARRAY_VARIABLE, constexps.size()));
         ir_name = Arr_name(ident, sym_table.top_num);
 
         reg.is_var = true;
@@ -2380,7 +2522,9 @@ public:
     vector<unique_ptr<BaseAST>> exps;
 
     // Register addr;
+    ST_item_t type;
     string ir_name;
+    bool is_ptr; // 这个lval自身是否是一个指针？这可以通过比较exps的维数和ident的维数来确定。如果二者维数相同，则是一个变量；否则是指针
 
     void DistriReg(int lb) override 
     {
@@ -2398,14 +2542,28 @@ public:
             exps[i]->DumpIR(os);
 
         string base = "@" + ir_name;
+        // 指针先load
+        if (type == VALUE_PTR)
+        {
+            os << "%addr" + to_string(tmp_addr) << " = load " << base << endl;
+            base = "%addr" + to_string(tmp_addr);
+            tmp_addr++;
+        }
 
         for (int i = 0; i < exps.size(); i++)
         {
             string new_base = "%addr" + to_string(tmp_addr++);
-            os << new_base << " = getelemptr " << base << ", " << exps[i]->reg << endl;
+            // 指针第一层访问需要用getptr
+            if (i == 0 && type == VALUE_PTR)
+                os << new_base << " = getptr " << base << ", " << exps[i]->reg << endl;
+            else 
+                os << new_base << " = getelemptr " << base << ", " << exps[i]->reg << endl;
             base = new_base;
         }
-        os << reg << " = load " << base << endl;
+        
+        if (is_ptr)
+            os << reg << " = getelemptr " << base << ", 0" << endl; 
+        else os << reg << " = load " << base << endl;
     }
 
     void Semantic() override
@@ -2416,11 +2574,45 @@ public:
         }
 
         pair<ST_item, int> pr = sym_table.look_up(ident);
-        assert(pr.first.type == ARRAY_CONST || pr.first.type == ARRAY_VARIABLE);
+        assert(pr.first.type == ARRAY_CONST || pr.first.type == ARRAY_VARIABLE || pr.first.type == VALUE_PTR);
         // assert(sym_table.find(ident) != sym_table.end());
         reg.is_var = true;
         reg.value = 0;
 
-        ir_name = Arr_name(ident, pr.second);
+        type = pr.first.type;
+        if (type == VALUE_PTR)
+            ir_name = Ptr_name(ident, pr.second);
+        else ir_name = Arr_name(ident, pr.second);
+
+        // 比较pr.first.dim_num和exps.size()判断是不是指针
+        is_ptr = (pr.first.dim_num > exps.size());
+    }
+
+    // 借用这个函数处理store的情况，把reg store到lval对应的地址中
+    void DumpArg(ostream &os, Register reg) const override
+    {
+        for (int i = 0; i < exps.size(); i++)
+            exps[i]->DumpIR(os);
+
+        string base = "@" + ir_name;
+        // 指针先load
+        if (type == VALUE_PTR)
+        {
+            os << "%addr" + to_string(tmp_addr) << " = load " << base << endl;
+            base = "%addr" + to_string(tmp_addr);
+            tmp_addr++;
+        }
+
+        for (int i = 0; i < exps.size(); i++)
+        {
+            string new_base = "%addr" + to_string(tmp_addr++);
+            // 指针第一层访问需要用getptr
+            if (i == 0 && type == VALUE_PTR)
+                os << new_base << " = getptr " << base << ", " << exps[i]->reg << endl;
+            else 
+                os << new_base << " = getelemptr " << base << ", " << exps[i]->reg << endl;
+            base = new_base;
+        }
+        os << "store " << reg << ", " << base << endl;
     }
 };

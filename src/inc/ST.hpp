@@ -8,7 +8,9 @@ typedef enum {
     NO_TYPE, // 无效类型
     VALUE_CONST, // 常数
     VALUE_VARIABLE, // 变量
-    VALUE_ARG, // 函数参数
+    VALUE_PTR, // 指针
+    ARG_VAR, // 函数变量参数
+    ARG_PTR, // 函数变量指针
     ARRAY_CONST, // 常量数组
     ARRAY_VARIABLE, // 变量数组
     FUNC_INT, // int 函数
@@ -18,9 +20,10 @@ typedef enum {
 // 符号表entry
 struct ST_item {
     ST_item_t type;
+    int dim_num; // 数组维数
     int value;
     
-    ST_item(ST_item_t ty = NO_TYPE, int v = 0): type(ty), value(v) {}
+    ST_item(ST_item_t ty = NO_TYPE, int d = 0, int v = 0): type(ty), dim_num(d), value(v) {}
 };
 
 // 单个block的符号表
@@ -94,26 +97,29 @@ public:
 
     // 增加ident及其表项信息。
     // 注意：添加发生在栈顶，专用于变量定义和函数定义
+    // 在为函数参数分配实际空间时，会覆盖掉参数
     void add_item(string ident, ST_item item)
     {
         int n = st_stack.size();
         assert(n > 0);
 
         st_stack[n-1].s_table[ident].type = item.type;
+        st_stack[n-1].s_table[ident].dim_num = item.dim_num;
         st_stack[n-1].s_table[ident].value = item.value;
     }
 
     // 修改ident对应的表项信息
+    // 只允许修改值，不允许修改类型
     pair<ST_item, int>
-    modify_item(string ident, ST_item item)
+    modify_item(string ident, int value)
     {
         for (int i = st_stack.size() - 1; i >= 0; i--)
         {
             map<string, ST_item>::iterator it = st_stack[i].s_table.find(ident);
             if (it != st_stack[i].s_table.end())
             {
-                it->second.type = item.type;
-                it->second.value = item.value;
+                // it->second.type = item.type;
+                it->second.value = value;
                 return make_pair(it->second, st_stack[i].num);
             }
         }
