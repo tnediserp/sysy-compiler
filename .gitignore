@@ -1,6 +1,7 @@
 *.DS_Store
 /build
 /debug
+/sysy-testsuit-collection
 
 # bash history
 .bash_history

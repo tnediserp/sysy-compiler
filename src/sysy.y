@@ -308,7 +308,6 @@ Stmt
   | LVal '=' Exp ';' {
       auto ast = new Stmt2Assign_AST();
       ast->lval = unique_ptr<BaseAST>($1);
-      ast->ident = ((LVal_AST *) $1)->ident;
       ast->exp = unique_ptr<BaseAST>($3);
       $$ = ast;
   }

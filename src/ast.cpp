@@ -11,7 +11,7 @@ int tmp_addr;
 int tmp_reg;
 
 // 变量ident在ir中的新名字。num是其所在符号表的编号
-string IR_name(string ident, int num)
+string Var_name(string ident, int num)
 {
     return "var_" + ident + "_" + to_string(num);
 }

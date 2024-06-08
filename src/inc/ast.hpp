@@ -21,7 +21,7 @@ extern stack<int> while_stack;
 extern int while_remain_num;
 extern int tmp_addr;
 extern int tmp_reg;
-string IR_name(string ident, int num);
+string Var_name(string ident, int num);
 string if_stmt_name(string ident, int num);
 string logic_name(string ident, int num);
 string func_name(string ident, int num);
@@ -66,19 +66,6 @@ public:
         else os << reg.value;
         return os;
     }
-
-    // 寄存器编号更新
-    /*
-    Register operator + (const int x)
-    {
-        Register reg;
-        reg = *this;
-        reg.num = num + x;
-        if (x > 0)
-            reg.real = true;
-        return reg;
-    }
-    */
 };
 
 // 所有 AST 的基类
@@ -222,19 +209,6 @@ public:
         // 我们需要一开始就为参数分配实际地址空间，否则如果用到时再分配，会造成死循环（lvX/061_greatest_common_divisor.c）
         if (func_params != nullptr)
             func_params->DumpArg(os);
-/*        for (int i = 0; i < arg_names.size(); i++)
-        {
-            string var_name = IR_name(arg_names[i], scope_num);
-            string arg_name = Arg_name(arg_names[i], scope_num);
-            // alloc
-            os << "@" << var_name << " = alloc ";
-            if (arg_types[i] == ARG_VAR)
-                os << "i32" << endl;
-            else if (arg_types[i] == ARG_PTR);
-                
-            os << "store @" << arg_name << ", @" << var_name << endl;
-        }
-*/
 
         block->DumpIR(os);
 
@@ -260,9 +234,6 @@ public:
         // cout << "func_name" << ir_name << endl;
 
         sym_table.push_scope(); // 为形式参数列表创建一个新的作用域
-        // scope_num = sym_table.top_num;
-
-        // cout << "begin block" << endl;
 
         if (func_params != nullptr)
             func_params->Semantic();
@@ -270,20 +241,6 @@ public:
         // 形式参数分配实际地址空间，加入全局符号表中
         if (func_params != nullptr)
             func_params->Parse_list(vector<int>());
-/*        for (int i = 0; i < arg_names.size(); i++)
-        {
-            pair<ST_item, int> pr = sym_table.look_up(arg_names[i]);
-            arg_types.push_back(pr.first.type);
-            // 如果参数是变量
-            if (pr.first.type == ARG_VAR)
-                sym_table.add_item(arg_names[i], ST_item(VALUE_VARIABLE, 0));
-            // 如果参数是指针
-            else if (pr.first.type == ARG_PTR)
-                sym_table.add_item(arg_names[i], ST_item(VALUE_PTR, 0));
-            // 不会遇到其他情况
-            else assert(false);
-        }
-*/
 
         block->Semantic();
         sym_table.pop_scope();
@@ -370,7 +327,7 @@ public:
         // 加入一个函数参数
         sym_table.add_item(ident, ST_item(ARG_VAR));
         arg_name = Arg_name(ident, sym_table.top_num);
-        var_name = IR_name(ident, sym_table.top_num);
+        var_name = Var_name(ident, sym_table.top_num);
     }
 
     // 借用这个函数，完成函数参数分配实际地址空间的功能
@@ -633,8 +590,6 @@ class Stmt2Assign_AST: public BaseAST
 {
 public: 
     unique_ptr<BaseAST> lval;
-    string ident;
-    string ir_name; // ir表示中的名字
     unique_ptr<BaseAST> exp;
 
     void DistriReg(int lb) override 
@@ -1048,10 +1003,6 @@ public:
         }
 
         os << ")" << endl;
-/*
-        if (func_type == FUNC_VOID)
-            os << reg << " = add 0, 0" << endl;
-*/
     }
 
     void Semantic() override 
@@ -1073,7 +1024,7 @@ public:
         reg.value = 0;
         
         ir_name = func_name(ident, 0);
-        // cout << "IR_name" << ir_name << endl;
+        // cout << "Var_name" << ir_name << endl;
     }
 };
 
@@ -1640,17 +1591,6 @@ public:
 
         os << endl << next_label << ":" << endl;
         os << reg << " = load @" << log_name << endl;
-
-/*
-        // laexp == 0？
-        os << imm_reg1 << " = eq " << laexp->reg << ", 0" <<endl; 
-        // eexp = 0?
-        os << imm_reg2 << " = eq " << eexp->reg << ", 0" <<endl; 
-        // laexp == 0 || eexp == 0?
-        os << imm_reg3 << " = or " << imm_reg1 << ", " << imm_reg2 << endl;
-        // 取反
-        os << reg << " = eq " << imm_reg3 << ", 0" << endl;
-*/
     }
 
     void Semantic() override
@@ -1742,13 +1682,6 @@ public:
 
         os << endl << next_label << ":" << endl;
         os << reg << " = load @" << log_name << endl;
-
-/*
-        // 按位或非零，则一定有一个为真
-        os << imm_reg1 << " = or " << loexp->reg << ", " << laexp->reg << endl;
-        os << imm_reg2 << " = eq " << imm_reg1 << ", 0" << endl;
-        os << reg << " = eq " << imm_reg2 << ", 0" << endl;
-*/
     }
 
     void Semantic() override
@@ -1938,7 +1871,7 @@ public:
         reg.is_var = true;
         reg.value = initval->reg.value;
 
-        ir_name = IR_name(ident, sym_table.top_num);
+        ir_name = Var_name(ident, sym_table.top_num);
     }
 
 };
@@ -1974,7 +1907,7 @@ public:
         reg.is_var = true;
         reg.value = 0;
 
-        ir_name = IR_name(ident, sym_table.top_num);
+        ir_name = Var_name(ident, sym_table.top_num);
     }
 };
 
@@ -2053,8 +1986,6 @@ public:
     string ident;
     string ir_name;
     ST_item_t type;
-    // bool is_arg; // 是否是函数参数
-    // string arg_name; // 如果是函数参数，则存放该参数名，否则为空串
 
     void DistriReg(int lb) override
     {
@@ -2075,6 +2006,7 @@ public:
             os << reg << " = getptr %addr" + to_string(tmp_addr) << ", 0" << endl;
             tmp_addr++;
             break;
+        // 返回指针
         case ARRAY_CONST:
         case ARRAY_VARIABLE:
             os << reg << " = getelemptr @" << ir_name << ", 0" << endl;
@@ -2093,13 +2025,11 @@ public:
         if (type == ARG_VAR) // 如果发现这个lval对应是函数参数
             assert(false);
 
-            // is_arg = false;
-            // arg_name = "";
         switch (type)
         {
         case VALUE_CONST:
         case VALUE_VARIABLE:
-            ir_name = IR_name(ident, pr.second);
+            ir_name = Var_name(ident, pr.second);
             break;
         case VALUE_PTR:
             ir_name = Ptr_name(ident, pr.second);
@@ -2389,7 +2319,7 @@ public:
         reg.value = 0;
     }
 
-    // 解析初始化列表
+    // 解析初始化列表，返回一个寄存器类型的vector，表示按序排好的所有初始值
     vector<Register> Parse_list(vector<int> dims) override
     {
         assert(!dims.empty());
