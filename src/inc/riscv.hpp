@@ -34,6 +34,9 @@ void DumpRISC(const koopa_raw_branch_t &branch, ostream &os);
 void DumpRISC(const koopa_raw_jump_t &jump, ostream &os);
 void DumpRISC(const koopa_raw_call_t &call, ostream &os);
 void DumpRISC(const koopa_raw_global_alloc_t &alloc, const koopa_raw_value_t &value, ostream &os);
+void DumpRISC(const koopa_raw_get_elem_ptr_t &getelemptr, const koopa_raw_value_t &value, ostream &os);
+void DumpRISC(const koopa_raw_get_ptr_t &getptr, const koopa_raw_value_t &value, ostream &os);
+void DumpRISC(const koopa_raw_aggregate_t &aggregate, ostream &os);
 void CheckReg(const koopa_raw_value_t &value);
 bool Load_imm(const koopa_raw_value_t &value, string reg);
 void Load_imm_dump(const koopa_raw_value_t &value, ostream &os);
@@ -45,6 +48,7 @@ int Stack_size(const koopa_raw_slice_t &slice);
 int Stack_size(const koopa_raw_function_t &func);
 int Stack_size(const koopa_raw_basic_block_t &bb);
 int Stack_size(const koopa_raw_value_t &value);
+int Ptr_size(const koopa_raw_type_t &ty);
 
 class Stack
 {

@@ -13,7 +13,7 @@
 using namespace std;
 
 // macros
-#define FILE_LEN 100000
+#define FILE_LEN 1000000
 
 // 声明 lexer 的输入, 以及 parser 函数
 // 为什么不引用 sysy.tab.hpp 呢? 因为首先里面没有 yyin 的定义

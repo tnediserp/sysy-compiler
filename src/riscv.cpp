@@ -176,12 +176,21 @@ int Stack_size(const koopa_raw_basic_block_t &bb)
 // 如果是call 指令，更新A_size
 int Stack_size(const koopa_raw_value_t &value)
 {   
+    size_t size = 4; // 指令需要的局部变量空间，默认为4
     // 不需要栈空间的情形
     if (value->kind.tag == KOOPA_RVT_RETURN || value->kind.tag == KOOPA_RVT_INTEGER || value->kind.tag == KOOPA_RVT_STORE || value->kind.tag == KOOPA_RVT_JUMP || value->kind.tag == KOOPA_RVT_BRANCH)
         return 0;
+
+    // 如果是getelemptr指令，则getelemptr的结果（一个地址）会被作为临时变量储存在栈上
+
+    // 如果是alloc指令，计算所需的空间
+    if (value->kind.tag == KOOPA_RVT_ALLOC)
+    {
+        size = Ptr_size(value->ty);
+    }
     // ad-hoc solution: size = 4;
     rstack.S_offset[value] = rstack.S_size;
-    rstack.S_size += 4;
+    rstack.S_size += size;
 
     // 如果是call指令，根据参数个数更新A_size
     if (value->kind.tag == KOOPA_RVT_CALL)
@@ -191,7 +200,23 @@ int Stack_size(const koopa_raw_value_t &value)
         rstack.R_size = 4;
         // return 4; // %1 = call f()
     }
-    return 4;
+    return size;
+}
+
+// 计算指针对应的空间大小
+int Ptr_size(const koopa_raw_type_t &ty)
+{
+    auto &ptr = ty->data.pointer;
+    // 整数 alloc i32
+    if (ptr.base->tag == KOOPA_RTT_INT32)
+        return 4;
+    
+    // 指针 alloc *i32 / *[i32, 2]
+    else if (ptr.base->tag == KOOPA_RTT_POINTER)
+        return 4;
+    
+    // 数组 alloc [i32, 2]
+    return ptr.base->data.array.len * Ptr_size(ptr.base);
 }
 
 
@@ -244,7 +269,30 @@ void DumpRISC(const koopa_raw_global_alloc_t &alloc, const koopa_raw_value_t &va
     os << ".data" << endl;
     os << ".globl " << name << endl;
     os << name << ":" << endl;
-    os << ".word " << alloc.init->kind.data.integer.value << endl << endl;
+
+    if (alloc.init->kind.tag == KOOPA_RVT_INTEGER)
+        os << ".word " << alloc.init->kind.data.integer.value << endl << endl;
+
+    else if (alloc.init->kind.tag == KOOPA_RVT_ZERO_INIT)
+        os << ".zero " << Ptr_size(value->ty) << endl << endl;
+    
+    else // alloc.init->kind.tag == KOOPA_RVT_AGGREGATE
+        DumpRISC(alloc.init->kind.data.aggregate, os);
+}
+
+// aggregate
+void DumpRISC(const koopa_raw_aggregate_t &aggregate, ostream &os)
+{
+    for (int i = 0; i < aggregate.elems.len; i++)
+    {
+        koopa_raw_value_t value = reinterpret_cast<koopa_raw_value_t>(aggregate.elems.buffer[i]);
+        if (value->kind.tag == KOOPA_RVT_AGGREGATE)
+            DumpRISC(value->kind.data.aggregate, os);
+        else // value->kind.tag == KOOPA_RVT_INTEGER
+            os << ".word " << value->kind.data.integer.value << endl;
+    }
+
+    os << endl;
 }
 
 // 访问函数
@@ -325,7 +373,7 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
             os << endl;
             break;
         case KOOPA_RVT_ALLOC:
-            // DumpRISC(kind.data.global_alloc, os);
+            // os << value->ty->data.pointer.base->tag << endl;
             break;
         case KOOPA_RVT_BRANCH: 
             DumpRISC(kind.data.branch, os);
@@ -342,6 +390,14 @@ void DumpRISC(const koopa_raw_value_t &value, ostream &os)
             break;
         case KOOPA_RVT_GLOBAL_ALLOC:
             DumpRISC(kind.data.global_alloc, value, os);
+            break;
+        case KOOPA_RVT_GET_ELEM_PTR:
+            DumpRISC(kind.data.get_elem_ptr, value, os);
+            os << endl;
+            break;
+        case KOOPA_RVT_GET_PTR:
+            DumpRISC(kind.data.get_ptr, value, os);
+            os << endl;
             break;
         default:
             // 其他类型暂时遇不到
@@ -394,15 +450,34 @@ void DumpRISC(const koopa_raw_return_t &ret, string reg, ostream &os)
 // load
 void DumpRISC(const koopa_raw_load_t &load, ostream &os)
 {
-    Load_addr_dump(load.src, "t0", os);
+    auto &src = load.src;
+    // 如果是这两种类型，需要先从栈上取出地址，再load该地址
+    if (src->kind.tag == KOOPA_RVT_GET_ELEM_PTR || src->kind.tag == KOOPA_RVT_GET_PTR)
+    {
+        Load_addr_dump(src, "t5", os); // t5中存着真正需要被load的地址
+        os << "lw t0, 0(t5)" << endl; // t0中存着得到的值
+    }
+    else Load_addr_dump(src, "t0", os);
     // os << "sw t0, " << stack.offset[value] << endl;
 }
 
 // store value, dest
 void DumpRISC(const koopa_raw_store_t &store, ostream &os)
 {
-    Load_addr_dump(store.value, "t0", os);
-    Store_addr_dump(store.dest, "t0", os);
+    auto &dest = store.dest;
+    auto &value = store.value;
+    // 如果是这两种类型，需要先从栈上取出地址，再存入该地址
+    if (dest->kind.tag == KOOPA_RVT_GET_ELEM_PTR || dest->kind.tag == KOOPA_RVT_GET_PTR)
+    {
+        Load_addr_dump(value, "t0", os); // t0中存着要被store的值
+        Load_addr_dump(dest, "t5", os); // t5中存着真正的目标地址
+        os << "sw t0, 0(t5)" << endl;
+    }
+    else {
+        Load_addr_dump(value, "t0", os);
+        Store_addr_dump(dest, "t0", os);
+    }
+    
 }
 
 // branch
@@ -445,6 +520,94 @@ void DumpRISC(const koopa_raw_call_t &call, ostream &os)
     os << "call " << call.callee->name + 1 << endl;
 
     // 把返回值保存到call指令对应的内存中
+}
+
+// getelemptr
+void DumpRISC(const koopa_raw_get_elem_ptr_t &getelemptr, const koopa_raw_value_t &value, ostream &os)
+{
+    auto &src = getelemptr.src;
+    auto &index = getelemptr.index;
+
+    // 如果src是alloc出来的，那么其地址已知，此时直接add
+    if (src->kind.tag == KOOPA_RVT_ALLOC)
+    {
+        int offset = rstack.Offset(src);
+        // 使用 addi
+        if (offset < 2048)
+            os << "addi t0, sp, " << offset << endl;
+        
+        // 使用 add
+        else 
+        {
+            os << "li t1, " << offset << endl;
+            os << "add t0, sp, t1" << endl;
+        }
+    }
+
+    // 如果src是全局变量，处理方法类似，但是使用la
+    else if (src->kind.tag == KOOPA_RVT_GLOBAL_ALLOC)
+        os << "la t0, " << glob_data[src] << endl;
+
+    // 否则src是getelemptr的结果，此时真正基地址存在临时变量里
+    else  // src->kind.tag == KOOPA_RVT_GET_ELEM_PTR
+        Load_addr_dump(src, "t0", os);
+    
+    // 到此，基地址存放在t0中
+    
+    Load_addr_dump(index, "t1", os); // index存放在t1中
+
+    int size = Ptr_size(value->ty); // 一个单元的长度
+    os << "li t2" << ", " << size << endl; // size存放在t2中
+
+    os << "mul t1, t1, t2" << endl;
+    os << "add t0, t0, t1" << endl;
+
+    // 存放结果
+    Store_addr_dump(value, "t0", os);
+}
+
+// getptr
+void DumpRISC(const koopa_raw_get_ptr_t &getptr, const koopa_raw_value_t &value, ostream &os)
+{
+    auto &src = getptr.src;
+    auto &index = getptr.index;
+
+    // 如果src是alloc出来的，那么其地址已知，此时直接add
+    if (src->kind.tag == KOOPA_RVT_ALLOC)
+    {
+        int offset = rstack.Offset(src);
+        // 使用 addi
+        if (offset < 2048)
+            os << "addi t0, sp, " << offset << endl;
+        
+        // 使用 add
+        else 
+        {
+            os << "li t1, " << offset << endl;
+            os << "add t0, sp, t1" << endl;
+        }
+    }
+
+    // 如果src是全局变量，处理方法类似，但是使用la
+    else if (src->kind.tag == KOOPA_RVT_GLOBAL_ALLOC)
+        os << "la t0, " << glob_data[src] << endl;
+
+    // 否则src是load的结果，此时真正基地址存在临时变量里
+    else  // src->kind.tag == KOOPA_RVT_GET_ELEM_PTR
+        Load_addr_dump(src, "t0", os);
+    
+    // 到此，基地址存放在t0中
+    
+    Load_addr_dump(index, "t1", os); // index存放在t1中
+
+    int size = Ptr_size(value->ty); // 一个单元的长度
+    os << "li t2" << ", " << size << endl; // size存放在t2中
+
+    os << "mul t1, t1, t2" << endl;
+    os << "add t0, t0, t1" << endl;
+
+    // 存放结果
+    Store_addr_dump(value, "t0", os);
 }
 
 // 检查指令是否已分配寄存器
@@ -498,6 +661,16 @@ void Load_addr_dump(const koopa_raw_value_t &value, string reg, ostream &os)
         os << "la t1, " << glob_data[value] << endl;
         os << "lw " << reg << ", 0(t1)" << endl;
     }
+
+/*
+    // 如果是这两种类型，需要先从栈上取出地址，再load该地址中的内容
+    else if (value->kind.tag == KOOPA_RVT_GET_ELEM_PTR || value->kind.tag == KOOPA_RVT_GET_PTR)
+    {
+        int offset = rstack.Offset(value);
+        Load_addr_dump(offset, "t5", os); // t5中存着真正的地址
+        os << "lw " << reg << ", 0(t5)" << endl;
+    }
+*/
         
     // address
     else 
@@ -515,6 +688,16 @@ void Store_addr_dump(const koopa_raw_value_t &value, string reg, ostream &os)
         os << "la t1, " << glob_data[value] << endl;
         os << "sw " << reg << ", 0(t1)" << endl;
     }
+
+/*
+    // 如果是这两种类型，需要先从栈上取出地址，再存入该地址
+    else if (value->kind.tag == KOOPA_RVT_GET_ELEM_PTR || value->kind.tag == KOOPA_RVT_GET_PTR)
+    {
+        int offset = rstack.Offset(value);
+        Load_addr_dump(offset, "t5", os); // t5中存着真正的地址
+        os << "sw " << reg << ", 0(t5)" << endl;
+    }
+*/
 
     else 
     {
