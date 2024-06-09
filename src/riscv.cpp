@@ -661,16 +661,6 @@ void Load_addr_dump(const koopa_raw_value_t &value, string reg, ostream &os)
         os << "la t1, " << glob_data[value] << endl;
         os << "lw " << reg << ", 0(t1)" << endl;
     }
-
-/*
-    // 如果是这两种类型，需要先从栈上取出地址，再load该地址中的内容
-    else if (value->kind.tag == KOOPA_RVT_GET_ELEM_PTR || value->kind.tag == KOOPA_RVT_GET_PTR)
-    {
-        int offset = rstack.Offset(value);
-        Load_addr_dump(offset, "t5", os); // t5中存着真正的地址
-        os << "lw " << reg << ", 0(t5)" << endl;
-    }
-*/
         
     // address
     else 
@@ -688,16 +678,6 @@ void Store_addr_dump(const koopa_raw_value_t &value, string reg, ostream &os)
         os << "la t1, " << glob_data[value] << endl;
         os << "sw " << reg << ", 0(t1)" << endl;
     }
-
-/*
-    // 如果是这两种类型，需要先从栈上取出地址，再存入该地址
-    else if (value->kind.tag == KOOPA_RVT_GET_ELEM_PTR || value->kind.tag == KOOPA_RVT_GET_PTR)
-    {
-        int offset = rstack.Offset(value);
-        Load_addr_dump(offset, "t5", os); // t5中存着真正的地址
-        os << "sw " << reg << ", 0(t5)" << endl;
-    }
-*/
 
     else 
     {
