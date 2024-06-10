@@ -4,6 +4,7 @@
 map<koopa_raw_value_t, string> registers;
 Stack rstack; // 记录该变量在栈中相对栈指针的偏移量
 map<koopa_raw_value_t, string> glob_data; // 储存全局变量名
+int new_branch_num; // 用于间接跳转的新标签
 
 // 将文本形式IR转换为内存形式
 koopa_raw_program_t str2raw(const char *str)
@@ -483,15 +484,28 @@ void DumpRISC(const koopa_raw_store_t &store, ostream &os)
 // branch
 void DumpRISC(const koopa_raw_branch_t &branch, ostream &os)
 {
+    // 实现间接跳转
     Load_addr_dump(branch.cond, "t0", os);
-    os << "bnez t0, " << branch.true_bb->name + 1 << endl;
-    os << "j " << branch.false_bb->name + 1 << endl;
+    os << "bnez t0, new_branch_true_" << new_branch_num << endl;
+    os << "j new_branch_false_" << new_branch_num << endl;
+
+    os << "new_branch_true_" << new_branch_num << ":" << endl;
+    os << "la t0, " << branch.true_bb->name + 1 << endl;
+    os << "jalr t0, t0, 0" << endl;
+
+    os << "new_branch_false_" << new_branch_num << ":" << endl;
+    os << "la t0, " << branch.false_bb->name + 1 << endl;
+    os << "jalr t0, t0, 0" << endl;
+
+    new_branch_num++;
 }
 
 // jump
 void DumpRISC(const koopa_raw_jump_t &jump, ostream &os)
 {
-    os << "j " << jump.target->name + 1 << endl;
+    // 实现间接跳转
+    os << "la t0, "  << jump.target->name + 1 << endl;
+    os << "jalr t0, t0, 0" << endl;
 }
 
 // call
