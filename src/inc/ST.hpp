@@ -1,6 +1,7 @@
 #pragma once
 #include<string>
 #include<vector>
+#include<map>
 #include<cassert>
 
 // 符号表中符号代表的可能类型
