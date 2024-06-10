@@ -63,7 +63,7 @@ int main(int argc, const char *argv[]) {
     }
     
     // 目标代码
-    else if (!strcmp(mode, "-riscv"))
+    else if (!strcmp(mode, "-riscv") || !strcmp(mode, "-perf"))
     {
         // 使用临时文件tmp保存文本形式IR
         ofstream tmp;
