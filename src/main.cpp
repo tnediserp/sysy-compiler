@@ -5,9 +5,9 @@
 #include <memory>
 #include <string>
 #include <cstring>
-#include <inc/ast.hpp>
-#include <inc/koopa.h> // 使用文档提供的文本IR到内存IR转换的标准接口
-#include <inc/riscv.hpp>
+#include "inc/ast.hpp"
+#include "inc/koopa.h" // 使用文档提供的文本IR到内存IR转换的标准接口
+#include "inc/riscv.hpp"
 #include <map>
 
 using namespace std;

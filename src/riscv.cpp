@@ -1,5 +1,5 @@
-#include <inc/riscv.hpp>
-#include <inc/ST.hpp>
+#include "inc/riscv.hpp"
+#include "inc/ST.hpp"
 
 map<koopa_raw_value_t, string> registers;
 Stack rstack; // 记录该变量在栈中相对栈指针的偏移量

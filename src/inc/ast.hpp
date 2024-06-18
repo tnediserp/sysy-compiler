@@ -2,12 +2,12 @@
 #include <memory>
 #include <string>
 #include <iostream>
-#include <inc/koopa_ir.hpp>
+#include "koopa_ir.hpp"
 #include <cassert>
 #include <vector>
 #include <map>
 #include <stack>
-#include <inc/ST.hpp>
+#include "ST.hpp"
 using namespace std;
 
 class Register;

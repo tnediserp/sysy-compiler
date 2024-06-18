@@ -4,6 +4,8 @@
 #include<map>
 #include<cassert>
 
+using namespace std;
+
 // 符号表中符号代表的可能类型
 typedef enum {
     NO_TYPE, // 无效类型
