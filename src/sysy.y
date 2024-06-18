@@ -54,9 +54,9 @@ using namespace std;
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef  Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp Decl ConstDecl ConstDef ConstInitVal BlockItem LVal ConstExp ConstDefList BlockList VarDecl VarDef VarDefList InitVal FuncFParams FuncFParam FuncRParams UnitList Def DimList ConstInitVal_List InitVal_List
+%type <ast_val> FuncDef  Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp LAndExp LOrExp RelExp EqExp Decl ConstDecl ConstDef ConstInitVal BlockItem LVal ConstExp ConstDefList BlockList VarDecl VarDef VarDefList InitVal FuncFParams FuncFParam FuncRParams UnitList Def DimList ConstInitVal_List InitVal_List OrdiStmt OpenStmt CloseStmt
 %type <int_val> Number
-%type <str_val> UnaryOp BType FuncType
+%type <str_val> UnaryOp FuncType
 
 %%
 
@@ -199,20 +199,20 @@ FuncFParams
   };
 
 FuncFParam 
-  : BType IDENT {
+  : FuncType IDENT {
     auto ast = new FuncFParam_AST();
     ast->btype = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
     $$ = ast;
   }
-  | BType IDENT '[' ']' {
+  | FuncType IDENT '[' ']' {
     auto ast = new FuncFParam_ptr_AST();
     ast->btype = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
     ast->constexps.clear();
     $$ = ast;
   }
-  | BType IDENT '[' ']' DimList {
+  | FuncType IDENT '[' ']' DimList {
     auto ast = new FuncFParam_ptr_AST();
     ast->btype = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
@@ -295,6 +295,17 @@ BlockItem
   ;
 
 Stmt
+  : OpenStmt {
+    auto ast = $1;
+    $$ = ast;
+  }
+  | CloseStmt {
+    auto ast = $1;
+    $$ = ast;
+  };
+
+// 不含 if 的 Stmt
+OrdiStmt
   : RETURN Exp ';' {
     auto ast = new Stmt2Ret_AST();
     ast->exp = unique_ptr<BaseAST>($2);
@@ -326,25 +337,6 @@ Stmt
     ast->block = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
-  | IF '(' Exp ')' Stmt {
-    auto ast = new Stmt2Sing_IF_AST();
-    ast->exp = unique_ptr<BaseAST>($3);
-    ast->stmt = unique_ptr<BaseAST>($5);
-    $$ = ast;
-  }
-  | IF '(' Exp ')' Stmt ELSE Stmt {
-    auto ast = new Stmt2With_ELSE_AST();
-    ast->exp = unique_ptr<BaseAST>($3);
-    ast->then_stmt = unique_ptr<BaseAST>($5);
-    ast->else_stmt = unique_ptr<BaseAST>($7);
-    $$ = ast;
-  }
-  | WHILE '(' Exp ')' Stmt {
-    auto ast = new Stmt2While_AST();
-    ast->exp = unique_ptr<BaseAST>($3);
-    ast->stmt = unique_ptr<BaseAST>($5);
-    $$ = ast;
-  }
   | BREAK ';' {
     auto ast = new Stmt2Break_AST();
     $$ = ast;
@@ -352,8 +344,49 @@ Stmt
   | CONTINUE ';' {
     auto ast = new Stmt2Conti_AST();
     $$ = ast;
+  };
+
+// if 和 else 不完全对应的情况
+OpenStmt
+  : IF '(' Exp ')' Stmt {
+    auto ast = new Stmt2Sing_IF_AST();
+    ast->exp = unique_ptr<BaseAST>($3);
+    ast->stmt = unique_ptr<BaseAST>($5);
+    $$ = ast;
   }
-  ;
+  | IF '(' Exp ')' CloseStmt ELSE OpenStmt {
+    auto ast = new Stmt2With_ELSE_AST();
+    ast->exp = unique_ptr<BaseAST>($3);
+    ast->then_stmt = unique_ptr<BaseAST>($5);
+    ast->else_stmt = unique_ptr<BaseAST>($7);
+    $$ = ast;
+  }
+  | WHILE '(' Exp ')' OpenStmt {
+    auto ast = new Stmt2While_AST();
+    ast->exp = unique_ptr<BaseAST>($3);
+    ast->stmt = unique_ptr<BaseAST>($5);
+    $$ = ast;
+  };
+
+// if 和 else 完全对应
+CloseStmt
+  : IF '(' Exp ')' CloseStmt ELSE CloseStmt {
+    auto ast = new Stmt2With_ELSE_AST();
+    ast->exp = unique_ptr<BaseAST>($3);
+    ast->then_stmt = unique_ptr<BaseAST>($5);
+    ast->else_stmt = unique_ptr<BaseAST>($7);
+    $$ = ast;
+  }
+  | WHILE '(' Exp ')' CloseStmt {
+    auto ast = new Stmt2While_AST();
+    ast->exp = unique_ptr<BaseAST>($3);
+    ast->stmt = unique_ptr<BaseAST>($5);
+    $$ = ast;
+  }
+  | OrdiStmt {
+    auto ast = $1;
+    $$ = ast;
+  };
 
 Number
   : INT_CONST {
@@ -624,12 +657,13 @@ VarDefList
     
     $$ = ast;
   };
-
+/*
 BType
   : INT {
     auto ast = new string("int");
     $$ = ast;
   };
+*/
 
 DimList
   : '[' Exp ']' {
