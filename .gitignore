@@ -8,3 +8,6 @@
 
 # koopa IR
 *.koopa
+
+# output
+*.out
